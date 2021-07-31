@@ -232,7 +232,7 @@ auto Sampling(const GraphTy &G, const ConfTy &CFG, double l,
   record.ThetaEstimationTotal = end - start;
 
   record.Theta = theta;
-  spdlog::get("console")->info("Theta {}", theta);
+  std::cout << G.num_nodes() << "," << theta << std::endl;
 
   record.GenerateRRRSets = measure<>::exec_time([&]() {
     if (theta > RR.size()) {

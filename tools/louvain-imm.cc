@@ -159,7 +159,7 @@ int main(int argc, char *argv[]) {
   const auto communities =
       ripples::getCommunitiesSubgraphs<GraphBwd>(Gf, communityVector);
   console->info("Number of Communities : {}", communities.size());
-
+  omp_get_max_threads() > communities.size() ? omp_set_num_threads(communities.size()) : omp_set_num_threads(omp_get_max_threads());
   nlohmann::json executionLog;
 
   std::vector<typename GraphBwd::vertex_type> seeds;
@@ -180,7 +180,8 @@ int main(int argc, char *argv[]) {
 
   std::ofstream perf(CFG.OutputFile);
   if (CFG.parallel) {
-    auto workers = CFG.streaming_workers;
+    auto workers = (communities.size() < CFG.streaming_workers ? communities.size() : CFG.streaming_workers);
+    CFG.seed_select_max_workers = workers;
     auto gpu_workers = CFG.streaming_gpu_workers;
 
     if (CFG.diffusionModel == "IC") {

@@ -683,8 +683,8 @@ class StreamingRRRGenerator {
     size_t num_rng_sequences = num_cpu_workers_;
 #endif
 
-    console->info("CPU Workers {}", num_cpu_workers);
-    console->info("GPU Workers {}", num_gpu_workers);
+    // console->info("CPU Workers {}", num_cpu_workers);
+    // console->info("GPU Workers {}", num_gpu_workers);
 
     // translate user-mapping string into vector
     size_t gpu_worker_id = 0;
@@ -709,8 +709,8 @@ class StreamingRRRGenerator {
 #endif
       {
         // create and add a CPU worker
-        console->info("> mapping: omp={}\t->\tCPU", omp_num);
-        console->info("cpu_worker_id = {}", cpu_worker_id);
+        // console->info("> mapping: omp={}\t->\tCPU", omp_num);
+        // console->info("cpu_worker_id = {}", cpu_worker_id);
         auto rng = master_rng;
         rng.split(num_rng_sequences, cpu_worker_id);
         workers.push_back(new cpu_worker_t(G, rng));
@@ -718,7 +718,7 @@ class StreamingRRRGenerator {
       }
     }
 
-    console->info("Configured");
+    // console->info("Configured");
   }
 
   StreamingRRRGenerator(StreamingRRRGenerator &&O)

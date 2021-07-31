@@ -1,0 +1,26 @@
+{
+ "options": [
+  [
+   "memkind",
+   "False"
+  ],
+  [
+   "nvidia_cub",
+   "False"
+  ],
+  [
+   "catch2:with_main",
+   "False"
+  ],
+  [
+   "libtrng:shared",
+   "True"
+  ]
+ ],
+ "root": {
+  "name": null,
+  "version": null,
+  "user": null,
+  "channel": null
+ }
+}

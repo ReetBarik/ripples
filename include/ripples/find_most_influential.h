@@ -87,7 +87,7 @@ auto FindMostInfluentialSet(const GraphTy &G, const ConfTy &CFG,
                             IMMExecutionRecord &record, bool enableGPU,
                             sequential_tag &&ex_tag) {
   using vertex_type = typename GraphTy::vertex_type;
-  size_t k = CFG.k;
+  size_t k = std::min(CFG.k, G.num_nodes());
 
   std::vector<uint32_t> vertexCoverage(G.num_nodes(), 0);
 
