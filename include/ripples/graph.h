@@ -608,6 +608,39 @@ class Graph {
 };
 
 template <typename BwdGraphTy, typename FwdGraphTy>
+auto getCommunitiesSubgraphsFwd(
+    const FwdGraphTy &Gf,
+    const std::vector<typename FwdGraphTy::vertex_type> &communityVector) {
+  using vertex_type = typename FwdGraphTy::vertex_type;
+  size_t num_communities =
+      *std::max_element(communityVector.begin(), communityVector.end()) + 1;
+  std::vector<FwdGraphTy> communities(num_communities);
+
+  using EdgeTy = Edge<typename FwdGraphTy::vertex_type, typename FwdGraphTy::edge_type::edge_weight>;
+  std::vector<std::vector<EdgeTy>> edge_lists(num_communities);
+  for (typename FwdGraphTy::vertex_type src = 0; src < Gf.num_nodes(); ++src) {
+    vertex_type original_src = Gf.convertID(src);
+
+    vertex_type community_src = communityVector[original_src - 1];
+    for (auto e : Gf.neighbors(src)) {
+      vertex_type original_dst = Gf.convertID(e.vertex);
+
+      vertex_type community_dst = communityVector[original_dst - 1];
+      if (community_dst == community_src) {
+        edge_lists[community_src].push_back(
+            {original_src, original_dst, e.weight});
+      }
+    }
+  }
+
+  for (size_t i = 0; i < num_communities; ++i) {
+    communities[i] = FwdGraphTy(edge_lists[i].begin(), edge_lists[i].end(), true);
+  }
+
+  return communities;
+}
+
+template <typename BwdGraphTy, typename FwdGraphTy>
 auto getCommunitiesSubgraphs(
     const FwdGraphTy &Gf,
     const std::vector<typename FwdGraphTy::vertex_type> &communityVector) {

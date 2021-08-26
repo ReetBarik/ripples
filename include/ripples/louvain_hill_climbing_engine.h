@@ -607,10 +607,10 @@ class SeedSelectionEngine {
  public:
   using ex_time_ms = std::chrono::duration<double, std::milli>;
 
-  SeedSelectionEngine(const GraphTy &G, size_t cpu_workers, size_t gpu_workers)
+  SeedSelectionEngine(const GraphTy &G, size_t cpu_workers, size_t gpu_workers, std::vector<auto> S;)
       : G_(G),
         count_(G_.num_nodes()),
-        S_(),
+        S_(S),
         logger_(spdlog::stdout_color_mt("SeedSelectionEngine")) {
     size_t num_threads = cpu_workers + gpu_workers;
     // Construct workers.
@@ -666,9 +666,8 @@ class SeedSelectionEngine {
     logger_->trace("Start Seed Selection");
 
     record.resize(workers_.size());
-    std::vector<vertex_type> result;
-    result.reserve(k);
-    for (size_t i = 0; i < k; ++i) {
+    vertex_type result;
+    
 #pragma omp parallel for
       for (size_t j = 0; j < count_.size(); ++j) count_[j] = 0;
 
@@ -685,10 +684,10 @@ class SeedSelectionEngine {
       S_.insert(v);
       result.push_back(v);
       logger_->trace("Seed {} : {}[{}] = {}", i, v, G_.convertID(v), *itr);
-    }
+   
 
-    logger_->trace("End Seed Selection");
-    return result;
+    // logger_->trace("End Seed Selection");
+    return std::pair<result, count_[itr];
   }
 
  private:
@@ -709,5 +708,19 @@ class SeedSelectionEngine {
   std::vector<worker_type *> workers_;
   std::atomic<size_t> mpmc_head_{0};
 };
+
+template <typename GraphTy, typename GraphMaskItrTy, typename ConfigTy>
+auto SeedSelection(GraphTy &G, GraphMaskItrTy B, GraphMaskItrTy E,
+                   ConfigTy &CFG, HillClimbingExecutionRecord &record, std::vector<vertex_type> s) {
+  SeedSelectionEngine<GraphTy, GraphMaskItrTy> countingEngine(
+      G, CFG.streaming_workers, CFG.streaming_gpu_workers, s);
+  auto start = std::chrono::high_resolution_clock::now();
+  auto S = countingEngine.exec(B, E, CFG.k, record.SeedSelectionTasks);
+  auto end = std::chrono::high_resolution_clock::now();
+  record.SeedSelection = end - start;
+
+  return S;
+}
+
 }  // namespace ripples
 #endif
