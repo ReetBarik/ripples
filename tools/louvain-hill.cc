@@ -80,17 +80,17 @@ auto GetExperimentRecord(
 
 }  // namespace ripples
 
-ripples::ToolConfiguration<ripples::LouvainHillClimbingConfiguration> CFG;
+ripples::ToolConfiguration<ripples::LouvainHillConfiguration> CFG;
 
 void parse_command_line(int argc, char **argv) {
   CFG.ParseCmdOptions(argc, argv);
 #pragma omp single
   CFG.streaming_workers = omp_get_max_threads();
-
-  if (CFG.seed_select_max_workers == 0)
-    CFG.seed_select_max_workers = CFG.streaming_workers;
-  if (CFG.seed_select_max_gpu_workers == std::numeric_limits<size_t>::max())
-    CFG.seed_select_max_gpu_workers = CFG.streaming_gpu_workers;
+  CFG.streaming_gpu_workers = CFG.streaming_workers;
+  // if (CFG.seed_select_max_workers == 0)
+  //   CFG.seed_select_max_workers = CFG.streaming_workers;
+  // if (CFG.seed_select_max_gpu_workers == std::numeric_limits<size_t>::max())
+  //   CFG.seed_select_max_gpu_workers = CFG.streaming_gpu_workers;
 }
 
 int main(int argc, char *argv[]) {
@@ -127,7 +127,7 @@ int main(int argc, char *argv[]) {
   console->info("Communities Vector Size : {}", communityVector.size());
 
   const auto communities =
-      ripples::getCommunitiesSubgraphsFwd<GraphFwd>(Gf, communityVector);
+      ripples::getCommunitiesSubgraphs<GraphFwd>(Gf, communityVector);
   console->info("Number of Communities : {}", communities.size());
   omp_get_max_threads() > communities.size() ? omp_set_num_threads(communities.size()) : omp_set_num_threads(omp_get_max_threads());
   nlohmann::json executionLog;
@@ -135,39 +135,31 @@ int main(int argc, char *argv[]) {
   std::vector<typename GraphFwd::vertex_type> seeds;
   std::vector<ripples::HillClimbingExecutionRecord> R(communities.size());
 
-
+  trng::lcg64 generator;
+  generator.seed(0UL);
+  generator.split(2, 1);
+  
   std::ofstream perf(CFG.OutputFile);
   if (CFG.parallel) {
     auto workers = (communities.size() < CFG.streaming_workers ? communities.size() : CFG.streaming_workers);
-    CFG.seed_select_max_workers = workers;
+    // CFG.seed_select_max_workers = workers;
     auto gpu_workers = CFG.streaming_gpu_workers;
 
     if (CFG.diffusionModel == "IC") {
       auto start = std::chrono::high_resolution_clock::now();
 
-      std::vector<trng::lcg64> generator;
-      
 
-      for (size_t i = 0; i < communities.size(); ++i) {
-        generator[i].seed(0UL);
-        generator[i].split(2, 1);
-      }
-      std::tie(seeds, R) = LouvainHill(communities, CFG, generator, R,
+      
+      std::tie(seeds, R) = LouvainHill(communities, CFG, R, generator, 
                                       ripples::independent_cascade_tag{},
                                       ripples::omp_parallel_tag{});
       auto end = std::chrono::high_resolution_clock::now();
       R[0].Total = end - start;
     } else if (CFG.diffusionModel == "LT") {
       auto start = std::chrono::high_resolution_clock::now();
-      std::vector<trng::lcg64> generator;
       
-
-      for (size_t i = 0; i < communities.size(); ++i) {
-        generator[i].seed(0UL);
-        generator[i].split(2, 1);
-      }
       std::tie(seeds, R) =
-          LouvainHill(communities, CFG, generator, R, ripples::linear_threshold_tag{},
+          LouvainHill(communities, CFG, R, generator, ripples::linear_threshold_tag{},
                      ripples::omp_parallel_tag{});
       auto end = std::chrono::high_resolution_clock::now();
       R[0].Total = end - start;

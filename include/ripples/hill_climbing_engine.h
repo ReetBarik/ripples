@@ -661,15 +661,9 @@ class SeedSelectionEngine {
 #endif
   }
 
-  std::vector<vertex_type> exec(ItrTy B, ItrTy E, size_t k,
-                                std::vector<std::vector<ex_time_ms>> &record) {
-    logger_->trace("Start Seed Selection");
+  auto get_next_seed(ItrTy B, ItrTy E, std::vector<std::vector<ex_time_ms>> &record) {
 
-    record.resize(workers_.size());
-    std::vector<vertex_type> result;
-    result.reserve(k);
-    for (size_t i = 0; i < k; ++i) {
-#pragma omp parallel for
+    #pragma omp parallel for
       for (size_t j = 0; j < count_.size(); ++j) count_[j] = 0;
 
       mpmc_head_.store(0);
@@ -683,8 +677,23 @@ class SeedSelectionEngine {
       auto itr = std::max_element(count_.begin(), count_.end());
       vertex_type v = std::distance(count_.begin(), itr);
       S_.insert(v);
+      
+      
+      return std::pair<vertex_type, size_t> (v, *itr);
+  }
+
+  std::vector<vertex_type> exec(ItrTy B, ItrTy E, size_t k,
+                                std::vector<std::vector<ex_time_ms>> &record) {
+    logger_->trace("Start Seed Selection");
+
+    record.resize(workers_.size());
+    std::vector<vertex_type> result;
+    result.reserve(k);
+    for (size_t i = 0; i < k; ++i) {
+      vertex_type v; size_t count; 
+      std::tie(v,count)  = get_next_seed(B, E, record);
       result.push_back(v);
-      logger_->trace("Seed {} : {}[{}] = {}", i, v, G_.convertID(v), *itr);
+      logger_->trace("Seed {} : {}[{}] = {}", i, v, G_.convertID(v), count);
     }
 
     logger_->trace("End Seed Selection");

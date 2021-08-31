@@ -111,7 +111,7 @@ struct HillClimbingExecutionRecord {
 
 template <typename GraphTy, typename GeneratorTy, typename diff_model_tag,
           typename ConfTy>
-auto SampleFrom(GraphTy &G, ConfTy &CFG, GeneratorTy &gen,
+std::vector<Bitmask<int>> SampleFrom(GraphTy &G, ConfTy &CFG, GeneratorTy &gen,
                 HillClimbingExecutionRecord &record,
                 diff_model_tag &&diff_model) {
   using vertex_type = typename GraphTy::vertex_type;
