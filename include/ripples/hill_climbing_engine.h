@@ -338,9 +338,9 @@ class SamplingEngine
 
  public:
   SamplingEngine(const GraphTy &G, PRNGTy &master_rng, size_t cpu_workers,
-                 size_t gpu_workers)
+                 size_t gpu_workers, std::string loggerName = "SamplingEngine")
     : phase_engine(G, master_rng, cpu_workers, gpu_workers,
-                     "SamplingEngine") {}
+                     loggerName) {}
 
   void exec(ItrTy B, ItrTy E, std::vector<std::vector<ex_time_ms>> &record) {
     record.resize(workers_.size());
@@ -355,6 +355,8 @@ class SamplingEngine
     }
     logger_->trace("End Sampling");
   }
+
+  ~SamplingEngine() {}
 
  private:
   using phase_engine::logger_;
@@ -607,11 +609,11 @@ class SeedSelectionEngine {
  public:
   using ex_time_ms = std::chrono::duration<double, std::milli>;
 
-  SeedSelectionEngine(const GraphTy &G, size_t cpu_workers, size_t gpu_workers)
+  SeedSelectionEngine(const GraphTy &G, size_t cpu_workers, size_t gpu_workers, std::string loggerName = "SeedSelectionEngine")
       : G_(G),
         count_(G_.num_nodes()),
         S_(),
-        logger_(spdlog::stdout_color_mt("SeedSelectionEngine")) {
+        logger_(spdlog::stdout_color_mt(loggerName)) {
     size_t num_threads = cpu_workers + gpu_workers;
     // Construct workers.
     logger_->debug("Number of Threads = {}", num_threads);
@@ -648,6 +650,56 @@ class SeedSelectionEngine {
       }
     }
   }
+
+  SeedSelectionEngine(const SeedSelectionEngine &O) 
+      : G_(O.G_),
+        count_(O.G_.num_nodes()),
+        S_(),
+        logger_(O.logger_) {
+
+
+
+        }
+
+  SeedSelectionEngine(SeedSelectionEngine &&O)       
+        : G_(O.G_),
+        count_(O.G_.num_nodes()),
+        S_(),
+        logger_(O.logger_) {
+
+        workers_.resize(O.workers_.size());
+        cpu_workers_.resize(O.cpu_workers_.size());
+        #if RIPPLES_ENABLE_CUDA
+        gpu_workers_.resize(O.gpu_workers_.size()) ;
+        cuda_contexts_.resize(O.cuda_contexts_.size()) ;
+        #endif
+
+        #pragma omp parallel
+        {
+          int rank = omp_get_thread_num();
+          if (rank < cpu_workers_.size()) {
+            auto w = new cpu_worker_type(G_, count_, S_);
+            workers_[rank] = w;
+            cpu_workers_[rank] = w;
+            logger_->debug("> mapping: omp {}\t->CPU", rank);
+          } else {
+          #if RIPPLES_ENABLE_CUDA
+          size_t num_devices = cuda_num_devices();
+          size_t device_id = rank % num_devices;
+          logger_->debug("> mapping: omp {}\t->GPU {}/{}", rank, device_id,
+                         num_devices);
+          logger_->trace("Building Cuda Context");
+          cuda_contexts_[rank - cpu_workers_.size()] = cuda_make_ctx(G, device_id);
+          typename gpu_worker_type::config_t gpu_conf(gpu_workers);
+          auto w = new gpu_worker_type(gpu_conf, G_, cuda_contexts_.back(),
+                                       count_, S_);
+          workers_[rank] = w;
+          gpu_workers_[rank - cpu_workers_.size()] = w;
+          logger_->trace("Cuda Context Built!");
+          #endif
+          }
+        }
+      }
 
   ~SeedSelectionEngine() {
     // Free workers.

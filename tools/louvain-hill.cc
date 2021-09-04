@@ -86,7 +86,7 @@ void parse_command_line(int argc, char **argv) {
   CFG.ParseCmdOptions(argc, argv);
 #pragma omp single
   CFG.streaming_workers = omp_get_max_threads();
-  CFG.streaming_gpu_workers = CFG.streaming_workers;
+  // CFG.streaming_gpu_workers = CFG.streaming_workers;
   // if (CFG.seed_select_max_workers == 0)
   //   CFG.seed_select_max_workers = CFG.streaming_workers;
   // if (CFG.seed_select_max_gpu_workers == std::numeric_limits<size_t>::max())

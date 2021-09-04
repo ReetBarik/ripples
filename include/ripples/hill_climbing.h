@@ -113,7 +113,7 @@ template <typename GraphTy, typename GeneratorTy, typename diff_model_tag,
           typename ConfTy>
 std::vector<Bitmask<int>> SampleFrom(GraphTy &G, ConfTy &CFG, GeneratorTy &gen,
                 HillClimbingExecutionRecord &record,
-                diff_model_tag &&diff_model) {
+                diff_model_tag &&diff_model, int index = -1) {
   using vertex_type = typename GraphTy::vertex_type;
   using edge_mask = Bitmask<int>;
   std::vector<edge_mask> samples(CFG.samples,
@@ -121,9 +121,18 @@ std::vector<Bitmask<int>> SampleFrom(GraphTy &G, ConfTy &CFG, GeneratorTy &gen,
   auto start = std::chrono::high_resolution_clock::now();
 
   using iterator_type = typename std::vector<edge_mask>::iterator;
-  SamplingEngine<GraphTy, iterator_type, GeneratorTy, diff_model_tag> SE(
-      G, gen, CFG.streaming_workers, CFG.streaming_gpu_workers);
-  SE.exec(samples.begin(), samples.end(), record.SamplingTasks);
+  if (index == -1) {
+      SamplingEngine<GraphTy, iterator_type, GeneratorTy, diff_model_tag> SE(
+      G, gen, CFG.streaming_workers, CFG.streaming_gpu_workers);  
+      SE.exec(samples.begin(), samples.end(), record.SamplingTasks);  
+  } else {
+      SamplingEngine<GraphTy, iterator_type, GeneratorTy, diff_model_tag> SE(
+      G, gen, CFG.streaming_workers, CFG.streaming_gpu_workers, "SamplingEngine" + std::to_string(index));  
+      SE.exec(samples.begin(), samples.end(), record.SamplingTasks);  
+  }
+  
+
+  
   auto end = std::chrono::high_resolution_clock::now();
   record.Sampling = end - start;
   return samples;

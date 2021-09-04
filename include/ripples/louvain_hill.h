@@ -108,11 +108,15 @@ std::vector<typename GraphTy::vertex_type> FindMostInfluentialSeedSet(const std:
   std::make_heap(global_heap.begin(), global_heap.end(), heap_cmp);
   std::mutex global_heap_mutex;
 
-  std::vector<SeedSelectionEngine<GraphTy, std::vector<Bitmask<int>>>> SEV(communities.size());
+  using GraphFwd =
+      ripples::Graph<uint32_t, ripples::WeightedDestination<uint32_t, float>, ripples::ForwardDirection<uint32_t>>;
 
-  for (size_t i = 0; i < communities.size(); ++i) 
-    SEV[i](communities[i], CFG.streaming_workers, CFG.streaming_gpu_workers);
-
+  std::vector<SeedSelectionEngine<GraphFwd, std::vector<Bitmask<int>>::iterator>> SEV;
+  SEV.reserve(communities.size());
+  for (size_t i = 0; i < communities.size(); ++i) {
+    SeedSelectionEngine<GraphFwd, std::vector<Bitmask<int>>::iterator> S(communities[i], CFG.streaming_workers, CFG.streaming_gpu_workers, "SeedSelectionEngine" + std::to_string(i));
+    SEV.push_back(move(S));
+  }
   while (!std::all_of(active_communities.begin(), active_communities.end(), [](const uint64_t &v) -> bool { return v == 0; })) {
 
 // #pragma omp parallel for schedule(dynamic)
@@ -126,7 +130,7 @@ std::vector<typename GraphTy::vertex_type> FindMostInfluentialSeedSet(const std:
         // vertex_contribution_pair vcp = SeedSelection(communities[i], sampled_graphs[i].begin(), sampled_graphs[i].end(), CFG,
         //                  R[i], community_seeds[i]);
 
-        vertex_contribution_pair vcp = SEV[i].get_next_seed(sampled_graphs[i].begin(), sampled_graphs[i].end(), R[i]);
+        vertex_contribution_pair vcp = SEV[i].get_next_seed(sampled_graphs[i].begin(), sampled_graphs[i].end(), R[i].SeedSelectionTasks);
       
 
 
@@ -183,17 +187,17 @@ std::vector<typename GraphTy::vertex_type> FindMostInfluentialSeedSet(const std:
 template <typename GraphTy, typename ConfTy, typename RecordTy,
            typename GeneratorTy, typename diff_model_tag>
 auto LouvainHill(const std::vector<GraphTy> &communities, ConfTy &CFG, std::vector<RecordTy> &R,
-                GeneratorTy &gen, diff_model_tag &&model_tag,
+                GeneratorTy gen, diff_model_tag &&model_tag,
                 omp_parallel_tag &&ex_tag) {
   using vertex_type = typename GraphTy::vertex_type;
   size_t k = CFG.k;
 
-  std::vector<decltype(gen)> comm_gen;
+  std::vector<decltype(gen)> comm_gen(communities.size());
 
   for (size_t i = 0; i < communities.size(); ++i) {
     auto local_gen = gen;
     local_gen.split(communities.size(), i);
-    comm_gen.push_back(local_gen);
+    comm_gen[i] = local_gen;
   }
 
   std::vector<std::vector<Bitmask<int>>> sampled_graphs(communities.size()); 
@@ -201,7 +205,7 @@ auto LouvainHill(const std::vector<GraphTy> &communities, ConfTy &CFG, std::vect
   // For each community do Sampling
 // #pragma omp parallel for schedule(dynamic)
   for (size_t i = 0; i < communities.size(); ++i) {
-    sampled_graphs[i] = SampleFrom(communities[i], CFG, comm_gen[i], R[i], std::forward<diff_model_tag>(model_tag));
+    sampled_graphs[i] = SampleFrom(communities[i], CFG, comm_gen[i], R[i], std::forward<diff_model_tag>(model_tag), i);
   }
 
   // Global seed selection using the heap
