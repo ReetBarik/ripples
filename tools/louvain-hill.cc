@@ -58,8 +58,8 @@ namespace ripples {
 
 template <typename SeedSet>
 auto GetExperimentRecord(
-    const ToolConfiguration<HillClimbingConfiguration>& CFG,
-    const HillClimbingExecutionRecord& R, const SeedSet& seeds) {
+    const ToolConfiguration<LouvainHillConfiguration> &CFG,
+    const HillClimbingExecutionRecord &R, const SeedSet &seeds) {
   nlohmann::json experiment{{"Algorithm", "HillClimbing"},
                             {"Input", CFG.IFileName},
                             {"Output", CFG.OutputFile},
@@ -142,7 +142,7 @@ int main(int argc, char *argv[]) {
   std::ofstream perf(CFG.OutputFile);
   if (CFG.parallel) {
     auto workers = (communities.size() < CFG.streaming_workers ? communities.size() : CFG.streaming_workers);
-    // CFG.seed_select_max_workers = workers;
+    
     auto gpu_workers = CFG.streaming_gpu_workers;
 
     if (CFG.diffusionModel == "IC") {
@@ -164,7 +164,18 @@ int main(int argc, char *argv[]) {
       auto end = std::chrono::high_resolution_clock::now();
       R[0].Total = end - start;
     }
-    console->info("Louvain IMM parallel : {}ms", R[0].Total.count());
+    console->info("Louvain Hill-Climbing parallel : {}ms", R[0].Total.count());
+    
+    size_t num_threads;
+#pragma omp single
+    num_threads = omp_get_max_threads();
+
+    for (auto &record : R) {
+      record.NumThreads = num_threads;
+      auto experiment = GetExperimentRecord(CFG, record, seeds);
+      executionLog.push_back(experiment);
+    }
+    perf << executionLog.dump(2);
 
   } else {
     //TODO:: Not done yet

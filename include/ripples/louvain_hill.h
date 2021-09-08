@@ -97,7 +97,7 @@ std::vector<typename GraphTy::vertex_type> FindMostInfluentialSeedSet(const std:
   // Init on heap per community
   using vertex_contribution_pair = std::pair<vertex_type, size_t>;
   std::vector<vertex_contribution_pair> global_heap(
-      CFG.k + 1, vertex_contribution_pair{-1, -1});
+      CFG.k + 1, vertex_contribution_pair{-1, 0});
   std::vector<uint64_t> active_communities(communities.size(), 1);
 
   auto heap_cmp = [](const vertex_contribution_pair &a,
@@ -106,8 +106,8 @@ std::vector<typename GraphTy::vertex_type> FindMostInfluentialSeedSet(const std:
   };
 
   std::make_heap(global_heap.begin(), global_heap.end(), heap_cmp);
-  std::mutex global_heap_mutex;
-
+  // std::mutex global_heap_mutex;
+  
   using GraphFwd =
       ripples::Graph<uint32_t, ripples::WeightedDestination<uint32_t, float>, ripples::ForwardDirection<uint32_t>>;
 
@@ -126,16 +126,14 @@ std::vector<typename GraphTy::vertex_type> FindMostInfluentialSeedSet(const std:
       if (active_communities[i] == 0) continue;
 
      
-        
-        // vertex_contribution_pair vcp = SeedSelection(communities[i], sampled_graphs[i].begin(), sampled_graphs[i].end(), CFG,
-        //                  R[i], community_seeds[i]);
 
         vertex_contribution_pair vcp = SEV[i].get_next_seed(sampled_graphs[i].begin(), sampled_graphs[i].end(), R[i].SeedSelectionTasks);
-      
+        
+        vcp.first = communities[i].convertID(vcp.first);
 
 
       // Handle the global index insertion
-      std::lock_guard<std::mutex> _(global_heap_mutex);
+      // std::lock_guard<std::mutex> _(global_heap_mutex);
       std::pop_heap(global_heap.begin(), global_heap.end(), heap_cmp);
       global_heap.back() = vcp;
       std::push_heap(global_heap.begin(), global_heap.end(), heap_cmp);

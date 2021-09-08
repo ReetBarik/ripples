@@ -664,7 +664,7 @@ class SeedSelectionEngine {
   SeedSelectionEngine(SeedSelectionEngine &&O)       
         : G_(O.G_),
         count_(O.G_.num_nodes()),
-        S_(),
+        S_(O.S_),
         logger_(O.logger_) {
 
         workers_.resize(O.workers_.size());
@@ -714,7 +714,7 @@ class SeedSelectionEngine {
   }
 
   auto get_next_seed(ItrTy B, ItrTy E, std::vector<std::vector<ex_time_ms>> &record) {
-
+    record.resize(workers_.size());
     #pragma omp parallel for
       for (size_t j = 0; j < count_.size(); ++j) count_[j] = 0;
 
@@ -738,7 +738,7 @@ class SeedSelectionEngine {
                                 std::vector<std::vector<ex_time_ms>> &record) {
     logger_->trace("Start Seed Selection");
 
-    record.resize(workers_.size());
+    
     std::vector<vertex_type> result;
     result.reserve(k);
     for (size_t i = 0; i < k; ++i) {
