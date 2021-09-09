@@ -141,9 +141,10 @@ int main(int argc, char *argv[]) {
   
   std::ofstream perf(CFG.OutputFile);
   if (CFG.parallel) {
-    auto workers = (communities.size() < CFG.streaming_workers ? communities.size() : CFG.streaming_workers);
+    // auto workers = (communities.size() < CFG.streaming_workers ? communities.size() : CFG.streaming_workers);
     
-    auto gpu_workers = CFG.streaming_gpu_workers;
+    // auto gpu_workers = CFG.streaming_gpu_workers;
+    CFG.streaming_workers = omp_get_max_threads();
 
     if (CFG.diffusionModel == "IC") {
       auto start = std::chrono::high_resolution_clock::now();
