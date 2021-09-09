@@ -657,7 +657,7 @@ class SeedSelectionEngine {
         S_(),
         logger_(O.logger_) {
 
-
+        //TODO::Implement this
 
         }
 
@@ -726,12 +726,22 @@ class SeedSelectionEngine {
         workers_[rank]->svc_loop(mpmc_head_, B, E, record[rank]);
       }
 
+      size_t base_count = 0;
+
+      if(!S_.empty()){
+        
+        for (auto itr = B; itr < E; ++itr) {
+          Bitmask<int> visited(G_.num_nodes());
+          base_count += BFS(G_, *itr, S_.begin(), S_.end(), visited);
+        }
+      }
+      
       auto itr = std::max_element(count_.begin(), count_.end());
       vertex_type v = std::distance(count_.begin(), itr);
       S_.insert(v);
       
       
-      return std::pair<vertex_type, size_t> (v, *itr);
+      return std::pair<vertex_type, size_t> (v, *itr - base_count);
   }
 
   std::vector<vertex_type> exec(ItrTy B, ItrTy E, size_t k,
