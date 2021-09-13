@@ -624,7 +624,7 @@ class SeedSelectionEngine {
     cuda_contexts_.resize(gpu_workers);
 #endif
 
-#pragma omp parallel
+#pragma omp parallel num_threads(num_threads)
     {
       int rank = omp_get_thread_num();
       if (rank < cpu_workers) {
@@ -669,12 +669,14 @@ class SeedSelectionEngine {
 
         workers_.resize(O.workers_.size());
         cpu_workers_.resize(O.cpu_workers_.size());
+        size_t num_threads = O.cpu_workers_.size(); 
         #if RIPPLES_ENABLE_CUDA
         gpu_workers_.resize(O.gpu_workers_.size()) ;
         cuda_contexts_.resize(O.cuda_contexts_.size()) ;
+        num_threads +=  O.gpu_workers_.size();
         #endif
 
-        #pragma omp parallel
+        #pragma omp parallel num_threads(num_threads)
         {
           int rank = omp_get_thread_num();
           if (rank < cpu_workers_.size()) {
@@ -719,7 +721,7 @@ class SeedSelectionEngine {
       for (size_t j = 0; j < count_.size(); ++j) count_[j] = 0;
 
       mpmc_head_.store(0);
-#pragma omp parallel
+#pragma omp parallel num_threads(workers_.size())
       {
         assert(workers_.size() == omp_get_num_threads());
         size_t rank = omp_get_thread_num();

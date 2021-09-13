@@ -90,8 +90,17 @@ std::vector<typename GraphTy::vertex_type> FindMostInfluentialSeedSet(const std:
   using vertex_type = typename GraphTy::vertex_type;
 
   Compare<vertex_type> cmp;
+  double parallel_knob = 0.25; // goes from 0 to 1
+  omp_set_nested(1);
+  int num_threads_d1, num_threads_d2;
+  if (parallel_knob == 0)
+    num_threads_d1 = 1;
+  else
+    num_threads_d1 = (int) (omp_get_max_threads() * parallel_knob);
+  num_threads_d2 = (int) (omp_get_max_threads() / num_threads_d1);
 
-
+  CFG.streaming_workers = num_threads_d2;
+  CFG.streaming_gpu_workers = 0;
   spdlog::get("console")->flush();
 
   // Init on heap per community
@@ -106,7 +115,7 @@ std::vector<typename GraphTy::vertex_type> FindMostInfluentialSeedSet(const std:
   };
 
   std::make_heap(global_heap.begin(), global_heap.end(), heap_cmp);
-  // std::mutex global_heap_mutex;
+  std::mutex global_heap_mutex;
   
   using GraphFwd =
       ripples::Graph<uint32_t, ripples::WeightedDestination<uint32_t, float>, ripples::ForwardDirection<uint32_t>>;
@@ -119,8 +128,7 @@ std::vector<typename GraphTy::vertex_type> FindMostInfluentialSeedSet(const std:
   }
   while (!std::all_of(active_communities.begin(), active_communities.end(), [](const uint64_t &v) -> bool { return v == 0; })) {
 
-// #pragma omp parallel for schedule(dynamic)
-    
+#pragma omp parallel for schedule(dynamic) num_threads(num_threads_d1)   
 
     for (size_t i = 0; i < communities.size(); ++i) {
       if (active_communities[i] == 0) continue;
@@ -133,7 +141,7 @@ std::vector<typename GraphTy::vertex_type> FindMostInfluentialSeedSet(const std:
 
 
       // Handle the global index insertion
-      // std::lock_guard<std::mutex> _(global_heap_mutex);
+      std::lock_guard<std::mutex> _(global_heap_mutex);
       std::pop_heap(global_heap.begin(), global_heap.end(), heap_cmp);
       global_heap.back() = vcp;
       std::push_heap(global_heap.begin(), global_heap.end(), heap_cmp);
