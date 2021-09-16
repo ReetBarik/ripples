@@ -609,7 +609,7 @@ class SeedSelectionEngine {
  public:
   using ex_time_ms = std::chrono::duration<double, std::milli>;
 
-  SeedSelectionEngine(const GraphTy &G, size_t cpu_workers, size_t gpu_workers, std::string loggerName = "SeedSelectionEngine")
+  SeedSelectionEngine(const GraphTy &G, size_t cpu_workers, size_t gpu_workers, std::string loggerName = "SeedSelectionEngine", size_t num_gpu_devices = 0, size_t first_gpu_id = 0)
       : G_(G),
         count_(G_.num_nodes()),
         S_(),
@@ -634,8 +634,13 @@ class SeedSelectionEngine {
         logger_->debug("> mapping: omp {}\t->CPU", rank);
       } else {
 #if RIPPLES_ENABLE_CUDA
-        size_t num_devices = cuda_num_devices();
-        size_t device_id = rank % num_devices;
+        //TODO:: check validity of num_gpu_devices and first_gpu_id
+        size_t num_devices;
+        if (num_gpu_devices == 0)
+          num_devices = cuda_num_devices();
+        else 
+          num_devices = num_gpu_devices;
+        size_t device_id = rank % num_devices + first_gpu_id;
         logger_->debug("> mapping: omp {}\t->GPU {}/{}", rank, device_id,
                        num_devices);
         logger_->trace("Building Cuda Context");

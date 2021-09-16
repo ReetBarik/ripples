@@ -53,6 +53,9 @@
 #include "spdlog/fmt/ostr.h"
 #include "spdlog/sinks/stdout_color_sinks.h"
 #include "spdlog/spdlog.h"
+#ifdef RIPPLES_ENABLE_CUDA
+#include "cuda_runtime.h"
+#endif
 
 namespace ripples {
 
@@ -96,11 +99,15 @@ std::vector<typename GraphTy::vertex_type> FindMostInfluentialSeedSet(const std:
   if (parallel_knob == 0)
     num_threads_d1 = 1;
   else
-    num_threads_d1 = (int) (omp_get_max_threads() * parallel_knob);
-  num_threads_d2 = (int) (omp_get_max_threads() / num_threads_d1);
+    num_threads_d1 = std::ceil(omp_get_max_threads() * parallel_knob);
+  num_threads_d2 = std::ceil(omp_get_max_threads() / num_threads_d1);
 
   CFG.streaming_workers = num_threads_d2;
-  CFG.streaming_gpu_workers = 0;
+  size_t total_gpu = 1; 
+  #if RIPPLES_ENABLE_CUDA
+  CFG.streaming_gpu_workers = cuda_num_devices() / num_threads_d1;
+  total_gpu = cuda_num_devices();
+  #endif
   spdlog::get("console")->flush();
 
   // Init on heap per community
@@ -123,12 +130,12 @@ std::vector<typename GraphTy::vertex_type> FindMostInfluentialSeedSet(const std:
   std::vector<SeedSelectionEngine<GraphFwd, std::vector<Bitmask<int>>::iterator>> SEV;
   SEV.reserve(communities.size());
   for (size_t i = 0; i < communities.size(); ++i) {
-    SeedSelectionEngine<GraphFwd, std::vector<Bitmask<int>>::iterator> S(communities[i], CFG.streaming_workers, CFG.streaming_gpu_workers, "SeedSelectionEngine" + std::to_string(i));
+    SeedSelectionEngine<GraphFwd, std::vector<Bitmask<int>>::iterator> S(communities[i], CFG.streaming_workers, CFG.streaming_gpu_workers, "SeedSelectionEngine" + std::to_string(i), CFG.streaming_gpu_workers, (i * CFG.streaming_gpu_workers) % total_gpu);
     SEV.push_back(move(S));
   }
   while (!std::all_of(active_communities.begin(), active_communities.end(), [](const uint64_t &v) -> bool { return v == 0; })) {
 
-#pragma omp parallel for schedule(dynamic) num_threads(num_threads_d1)   
+#pragma omp parallel for schedule(static) num_threads(num_threads_d1)   
 
     for (size_t i = 0; i < communities.size(); ++i) {
       if (active_communities[i] == 0) continue;
