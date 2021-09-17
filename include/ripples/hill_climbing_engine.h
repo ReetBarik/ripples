@@ -696,8 +696,8 @@ class SeedSelectionEngine {
           logger_->debug("> mapping: omp {}\t->GPU {}/{}", rank, device_id,
                          num_devices);
           logger_->trace("Building Cuda Context");
-          cuda_contexts_[rank - cpu_workers_.size()] = cuda_make_ctx(G, device_id);
-          typename gpu_worker_type::config_t gpu_conf(gpu_workers);
+          cuda_contexts_[rank - cpu_workers_.size()] = cuda_make_ctx(G_, device_id);
+          typename gpu_worker_type::config_t gpu_conf(gpu_workers_.size());
           auto w = new gpu_worker_type(gpu_conf, G_, cuda_contexts_.back(),
                                        count_, S_);
           workers_[rank] = w;
