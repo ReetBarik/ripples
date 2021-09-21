@@ -144,7 +144,7 @@ int main(int argc, char *argv[]) {
     // auto workers = (communities.size() < CFG.streaming_workers ? communities.size() : CFG.streaming_workers);
     
     // auto gpu_workers = CFG.streaming_gpu_workers;
-    CFG.streaming_workers = omp_get_max_threads();
+    CFG.streaming_workers -= CFG.streaming_gpu_workers;
 
     if (CFG.diffusionModel == "IC") {
       auto start = std::chrono::high_resolution_clock::now();

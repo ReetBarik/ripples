@@ -93,13 +93,10 @@ std::vector<typename GraphTy::vertex_type> FindMostInfluentialSeedSet(const std:
   using vertex_type = typename GraphTy::vertex_type;
 
   Compare<vertex_type> cmp;
-  double parallel_knob = 0.25; // goes from 0 to 1
+  
   omp_set_nested(1);
-  int num_threads_d1, num_threads_d2;
-  if (parallel_knob == 0)
-    num_threads_d1 = 1;
-  else
-    num_threads_d1 = std::ceil(omp_get_max_threads() * parallel_knob);
+  int num_threads_d1 = 4, num_threads_d2;
+  
   num_threads_d2 = std::ceil(omp_get_max_threads() / num_threads_d1);
 
   CFG.streaming_workers = num_threads_d2;

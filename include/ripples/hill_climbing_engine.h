@@ -264,7 +264,7 @@ class PhaseEngine {
     cuda_contexts_.resize(gpu_workers);
 #endif
 
-#pragma omp parallel
+#pragma omp parallel num_threads(num_threads)
     {
       int rank = omp_get_thread_num();
       if (rank < cpu_workers) {
@@ -347,7 +347,7 @@ class SamplingEngine
     mpmc_head_.store(0);
 
     logger_->trace("Start Sampling");
-#pragma omp parallel
+#pragma omp parallel num_threads(workers_.size())
     {
       assert(workers_.size() == omp_get_num_threads());
       size_t rank = omp_get_thread_num();
