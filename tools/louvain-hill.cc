@@ -129,7 +129,7 @@ int main(int argc, char *argv[]) {
   const auto communities =
       ripples::getCommunitiesSubgraphs<GraphFwd>(Gf, communityVector);
   console->info("Number of Communities : {}", communities.size());
-  omp_get_max_threads() > communities.size() ? omp_set_num_threads(communities.size()) : omp_set_num_threads(omp_get_max_threads());
+  
   nlohmann::json executionLog;
 
   std::vector<typename GraphFwd::vertex_type> seeds;
