@@ -74,5 +74,5 @@ def find_cuda_libs(self):
             self.start_msg('Checking for library nvidia-cub')
             self.end_msg('yes (by conan)') 
         else:  
-            self.check_cxx(header='cub/cub.cuh', lib='nvidia_cub', libpath=_libpath, includes=_includes)
+            self.check_cxx(header='cub/cub.cuh', msg='checking for library: nvidia_cub', libpath=_libpath, includes=_includes)
 
