@@ -68,6 +68,11 @@ struct LouvainHillConfiguration : public HillClimbingConfiguration {
                    "The filename of the community map.")
         ->required()
         ->group("Algorithm Options");
+
+    app.add_option(
+       "--streaming-gpu-workers", streaming_gpu_workers,
+       "The number of GPU workers for the CPU+GPU streaming engine.")
+    ->group("Streaming-Engine Options");
   }
 };
 
@@ -99,13 +104,17 @@ std::vector<typename GraphTy::vertex_type> FindMostInfluentialSeedSet(const std:
   
   num_threads_d2 = std::ceil(omp_get_max_threads() / num_threads_d1);
 
-  CFG.streaming_workers = num_threads_d2;
-  size_t total_gpu = 1; 
-  #if RIPPLES_ENABLE_CUDA
-  CFG.streaming_gpu_workers = cuda_num_devices() / num_threads_d1;
-  total_gpu = cuda_num_devices();
-  #endif
+  
+  size_t total_gpu = 8; 
+  // #if RIPPLES_ENABLE_CUDA
+  // CFG.streaming_gpu_workers = cuda_num_devices() / num_threads_d1;
+  // total_gpu = cuda_num_devices();
+  // #endif
   spdlog::get("console")->flush();
+
+  CFG.streaming_workers = num_threads_d2;
+  CFG.streaming_gpu_workers = total_gpu / num_threads_d1;
+  CFG.streaming_workers -= CFG.streaming_gpu_workers;
 
   // Init on heap per community
   using vertex_contribution_pair = std::pair<vertex_type, size_t>;

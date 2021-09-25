@@ -356,7 +356,6 @@ class SamplingEngine
     logger_->trace("End Sampling");
   }
 
-  ~SamplingEngine() {}
 
  private:
   using phase_engine::logger_;

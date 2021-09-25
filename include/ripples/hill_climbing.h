@@ -67,7 +67,7 @@ namespace ripples {
 struct HillClimbingConfiguration : public AlgorithmConfiguration {
   size_t samples{10000};
   size_t streaming_workers{0};
-  size_t streaming_gpu_workers{0};
+  size_t streaming_gpu_workers{8};
 
   //! \brief Add command line options to configure the Hill Climbing Algorithm.
   //!
