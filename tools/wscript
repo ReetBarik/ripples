@@ -72,7 +72,7 @@ def build(bld):
         cxxflags=cuda_acc_cxx_flags)
 
     bld(features='cxx cxxprogram', source='louvain-imm.cc', target='louvain-imm',
-        use=tools_deps)
+        use=cuda_acc_tools_deps + ['cuda_hc_bfs'], cxxflags=cuda_acc_cxx_flags, cuda=bld.env.ENABLE_CUDA)
 
     bld(features='cxx cxxprogram', source='louvain-hill.cc', target='louvain-hill',
         use=tools_deps)
