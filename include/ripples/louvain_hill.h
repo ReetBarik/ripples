@@ -224,7 +224,8 @@ auto LouvainHill(const std::vector<GraphTy> &communities, ConfTy &CFG, std::vect
   // For each community do Sampling
 // #pragma omp parallel for schedule(dynamic)
   for (size_t i = 0; i < communities.size(); ++i) {
-    sampled_graphs[i] = SampleFrom(communities[i], CFG, comm_gen[i], R[i], std::forward<diff_model_tag>(model_tag), i);
+    ripples::Graph<uint32_t, ripples::WeightedDestination<uint32_t, float>> c_g = communities[i];
+    sampled_graphs[i] = SampleFrom(c_g, CFG, comm_gen[i], R[i], std::forward<diff_model_tag>(model_tag), i);
   }
 
   // Global seed selection using the heap
