@@ -645,7 +645,7 @@ class SeedSelectionEngine {
         logger_->trace("Building Cuda Context");
         cuda_contexts_[rank - cpu_workers] = cuda_make_ctx(G, device_id);
         typename gpu_worker_type::config_t gpu_conf(gpu_workers);
-        auto w = new gpu_worker_type(gpu_conf, G_, cuda_contexts_.back(),
+        auto w = new gpu_worker_type(gpu_conf, G_, cuda_contexts_[rank - cpu_workers],
                                      count_, S_);
         workers_[rank] = w;
         gpu_workers_[rank - cpu_workers] = w;
@@ -697,7 +697,7 @@ class SeedSelectionEngine {
           logger_->trace("Building Cuda Context");
           cuda_contexts_[rank - cpu_workers_.size()] = cuda_make_ctx(G_, device_id);
           typename gpu_worker_type::config_t gpu_conf(gpu_workers_.size());
-          auto w = new gpu_worker_type(gpu_conf, G_, cuda_contexts_.back(),
+          auto w = new gpu_worker_type(gpu_conf, G_, cuda_contexts_[rank - cpu_workers_.size()],
                                        count_, S_);
           workers_[rank] = w;
           gpu_workers_[rank - cpu_workers_.size()] = w;
