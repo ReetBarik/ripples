@@ -105,7 +105,7 @@ std::vector<typename GraphTy::vertex_type> FindMostInfluentialSeedSet(const std:
   num_threads_d2 = std::ceil(omp_get_max_threads() / num_threads_d1);
 
   
-  size_t total_gpu = 8; 
+  size_t total_gpu = 4; 
   // #if RIPPLES_ENABLE_CUDA
   // CFG.streaming_gpu_workers = cuda_num_devices() / num_threads_d1;
   // total_gpu = cuda_num_devices();
@@ -225,7 +225,7 @@ auto LouvainHill(const std::vector<GraphTy> &communities, ConfTy &CFG, std::vect
 // #pragma omp parallel for schedule(dynamic)
   for (size_t i = 0; i < communities.size(); ++i) {
     ripples::Graph<uint32_t, ripples::WeightedDestination<uint32_t, float>> c_g = communities[i];
-    sampled_graphs[i] = SampleFrom(c_g, CFG, comm_gen[i], R[i], std::forward<diff_model_tag>(model_tag), i);
+    sampled_graphs[i] = SampleFrom(communities[i], CFG, comm_gen[i], R[i], std::forward<diff_model_tag>(model_tag), i);
   }
 
   // Global seed selection using the heap

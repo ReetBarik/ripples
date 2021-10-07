@@ -27,7 +27,7 @@
    "2": {
     "ref": "fmt/5.3.0@bincrafters/stable",
     "options": "fPIC=True\nheader_only=False\nshared=False\nwith_fmt_alias=False",
-    "package_id": "d351525cc53ebe68279edf1978846402420066e7",
+    "package_id": "b89ed4bc63dd5b8dfc5cdf687fc0b2b0695cd747",
     "prev": "0",
     "context": "host"
    },
@@ -55,7 +55,7 @@
    "6": {
     "ref": "libtrng/4.22@user/stable",
     "options": "shared=True",
-    "package_id": "27cb7fbffba1a5268eda91c4da54b0254d48c3b1",
+    "package_id": "6851d1dd77492e6204f60d237fc9e70f016392a2",
     "prev": "0",
     "context": "host"
    },
@@ -70,5 +70,5 @@
   "revisions_enabled": false
  },
  "version": "0.4",
- "profile_host": "[settings]\narch=x86_64\narch_build=x86_64\nbuild_type=Release\ncompiler=gcc\ncompiler.libcxx=libstdc++\ncompiler.version=7\nos=Linux\nos_build=Linux\n[options]\n[build_requires]\n[env]\n"
+ "profile_host": "[settings]\narch=x86_64\narch_build=x86_64\nbuild_type=Release\ncompiler=gcc\ncompiler.libcxx=libstdc++11\ncompiler.version=9.1\nos=Linux\nos_build=Linux\n[options]\n[build_requires]\n[env]\nCC=/share/apps/gcc/9.1.0/bin/gcc\nCXX=/share/apps/gcc/9.1.0/bin/g++"
 }

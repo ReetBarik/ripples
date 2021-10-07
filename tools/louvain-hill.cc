@@ -126,7 +126,7 @@ int main(int argc, char *argv[]) {
 
   console->info("Communities Vector Size : {}", communityVector.size());
 
-  const auto communities =
+   auto communities =
       ripples::getCommunitiesSubgraphs<GraphFwd>(Gf, communityVector);
   console->info("Number of Communities : {}", communities.size());
   

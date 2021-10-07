@@ -20,7 +20,7 @@
     CLI11/1.8.0@cliutils/stable:5ab84d6acfe1f23c4fae0ab88f26e3a396351ac9
     WafGen/0.1@user/stable:5ab84d6acfe1f23c4fae0ab88f26e3a396351ac9
     catch2/2.13.3:5ab84d6acfe1f23c4fae0ab88f26e3a396351ac9
-    libtrng/4.22@user/stable:27cb7fbffba1a5268eda91c4da54b0254d48c3b1
+    libtrng/4.22@user/stable:6851d1dd77492e6204f60d237fc9e70f016392a2
     nlohmann_json/3.9.1:5ab84d6acfe1f23c4fae0ab88f26e3a396351ac9
     spdlog/1.3.1@bincrafters/stable:5ab84d6acfe1f23c4fae0ab88f26e3a396351ac9
 
@@ -34,4 +34,5 @@
 
 
 [env]
-
+    CC=/share/apps/gcc/9.1.0/bin/gcc
+    CXX=/share/apps/gcc/9.1.0/bin/g++

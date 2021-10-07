@@ -281,7 +281,7 @@ class PhaseEngine {
         logger_->debug("> mapping: omp {}\t->GPU {}/{}", rank, device_id,
                        num_devices);
         logger_->trace("Building Cuda Context");
-        cuda_contexts_[rank - cpu_workers] = cuda_make_ctx(G, device_id);
+        cuda_contexts_[rank - cpu_workers] = cuda_make_ctx(G_, device_id);
         auto rng = master_rng;
         rng.split(num_threads, rank);
         auto w =
@@ -308,7 +308,7 @@ class PhaseEngine {
   }
 
  protected:
-  const GraphTy &G_;
+const  GraphTy &G_;
 
   std::shared_ptr<spdlog::logger> logger_;
 
