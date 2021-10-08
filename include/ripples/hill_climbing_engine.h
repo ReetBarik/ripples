@@ -512,9 +512,8 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy> {
     cuda_stream_create(&cuda_stream_);
 
     // allocate host/device memory
-    Bitmask<int> b(G_.num_edges());
-    cuda_malloc((void **)&d_edge_filter_,
-                 b.bytes());
+    Bitmask<int> _(G_.num_edges());
+    cuda_malloc((void **)&d_edge_filter_, _.bytes());
 
     // create the solver
     solver_ = new bfs_solver_t(this->G_.num_nodes(), this->G_.num_edges(),
@@ -558,8 +557,7 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy> {
   void batch(ItrTy B, ItrTy E) {
     std::vector<d_vertex_type> seeds(S_.begin(), S_.end());
     for (auto itr = B; itr < E; ++itr) {
-      cuda_h2d(d_edge_filter_, itr->data(),
-                itr->bytes(), cuda_stream_);
+      cuda_h2d(d_edge_filter_, itr->data(), itr->bytes(), cuda_stream_);
 
       d_vertex_type base_count;
       solver_->traverse(seeds.data(), seeds.size(), visited_.get(),
