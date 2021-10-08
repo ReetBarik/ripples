@@ -90,7 +90,7 @@ struct Compare {
 
 
 template <typename GraphTy, typename RecordTy, typename ConfTy, typename execution_tag>
-std::vector<typename GraphTy::vertex_type> FindMostInfluentialSeedSet(const std::vector<GraphTy> &communities, std::vector<std::vector<Bitmask<int>>> &sampled_graphs,
+std::vector<typename GraphTy::vertex_type> FindMostInfluentialSeedSet(std::vector<GraphTy> & communities, std::vector<std::vector<Bitmask<int>>> &sampled_graphs,
                             std::vector<RecordTy> &R, ConfTy &CFG,
                             execution_tag &&ex_tag) {
   spdlog::get("console")->info("SeedSelect start");
@@ -205,7 +205,7 @@ std::vector<typename GraphTy::vertex_type> FindMostInfluentialSeedSet(const std:
 //! \param ex_tag The execution policy tag.
 template <typename GraphTy, typename ConfTy, typename RecordTy,
            typename GeneratorTy, typename diff_model_tag>
-auto LouvainHill(const std::vector<GraphTy> &communities, ConfTy &CFG, std::vector<RecordTy> &R,
+auto LouvainHill(std::vector<GraphTy> &communities, ConfTy &CFG, std::vector<RecordTy> &R,
                 GeneratorTy gen, diff_model_tag &&model_tag,
                 omp_parallel_tag &&ex_tag) {
   using vertex_type = typename GraphTy::vertex_type;
@@ -224,7 +224,6 @@ auto LouvainHill(const std::vector<GraphTy> &communities, ConfTy &CFG, std::vect
   // For each community do Sampling
 // #pragma omp parallel for schedule(dynamic)
   for (size_t i = 0; i < communities.size(); ++i) {
-    ripples::Graph<uint32_t, ripples::WeightedDestination<uint32_t, float>> c_g = communities[i];
     sampled_graphs[i] = SampleFrom(communities[i], CFG, comm_gen[i], R[i], std::forward<diff_model_tag>(model_tag), i);
   }
 
