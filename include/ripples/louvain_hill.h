@@ -105,7 +105,7 @@ std::vector<typename GraphTy::vertex_type> FindMostInfluentialSeedSet(const std:
   num_threads_d2 = std::ceil(omp_get_max_threads() / num_threads_d1);
 
   
-  size_t total_gpu = 4; 
+  size_t total_gpu = 8; 
   // #if RIPPLES_ENABLE_CUDA
   // CFG.streaming_gpu_workers = cuda_num_devices() / num_threads_d1;
   // total_gpu = cuda_num_devices();
@@ -133,11 +133,11 @@ std::vector<typename GraphTy::vertex_type> FindMostInfluentialSeedSet(const std:
   using GraphFwd =
       ripples::Graph<uint32_t, ripples::WeightedDestination<uint32_t, float>, ripples::ForwardDirection<uint32_t>>;
 
-  std::vector<SeedSelectionEngine<GraphFwd, std::vector<Bitmask<int>>::iterator>> SEV;
+  std::vector<SeedSelectionEngine<GraphFwd, std::vector<Bitmask<int>>::iterator>*> SEV;
   SEV.reserve(communities.size());
   for (size_t i = 0; i < communities.size(); ++i) {
-    SeedSelectionEngine<GraphFwd, std::vector<Bitmask<int>>::iterator> S(communities[i], CFG.streaming_workers, CFG.streaming_gpu_workers, "SeedSelectionEngine" + std::to_string(i), CFG.streaming_gpu_workers, (i * CFG.streaming_gpu_workers) % total_gpu);
-    SEV.push_back(move(S));
+    auto S = new SeedSelectionEngine<GraphFwd, std::vector<Bitmask<int>>::iterator>(communities[i], CFG.streaming_workers, CFG.streaming_gpu_workers, "SeedSelectionEngine" + std::to_string(i), CFG.streaming_gpu_workers, (i % num_threads_d1) * CFG.streaming_gpu_workers);
+    SEV[i] = S;
   }
   while (!std::all_of(active_communities.begin(), active_communities.end(), [](const uint64_t &v) -> bool { return v == 0; })) {
 
@@ -148,7 +148,7 @@ std::vector<typename GraphTy::vertex_type> FindMostInfluentialSeedSet(const std:
 
      
 
-        vertex_contribution_pair vcp = SEV[i].get_next_seed(sampled_graphs[i].begin(), sampled_graphs[i].end(), R[i].SeedSelectionTasks);
+        vertex_contribution_pair vcp = SEV[i]->get_next_seed(sampled_graphs[i].begin(), sampled_graphs[i].end(), R[i].SeedSelectionTasks);
         
         vcp.first = communities[i].convertID(vcp.first);
 
@@ -224,7 +224,6 @@ auto LouvainHill(const std::vector<GraphTy> &communities, ConfTy &CFG, std::vect
   // For each community do Sampling
 // #pragma omp parallel for schedule(dynamic)
   for (size_t i = 0; i < communities.size(); ++i) {
-    ripples::Graph<uint32_t, ripples::WeightedDestination<uint32_t, float>> c_g = communities[i];
     sampled_graphs[i] = SampleFrom(communities[i], CFG, comm_gen[i], R[i], std::forward<diff_model_tag>(model_tag), i);
   }
 

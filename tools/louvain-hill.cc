@@ -97,7 +97,7 @@ int main(int argc, char *argv[]) {
   auto console = spdlog::stdout_color_st("console");
   parse_command_line(argc, argv);
 
-  spdlog::set_level(spdlog::level::info);
+  spdlog::set_level(spdlog::level::trace);
 
   trng::lcg64 weightGen;
   weightGen.seed(0UL);
