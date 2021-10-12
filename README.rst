@@ -59,8 +59,8 @@ Then we need to install dependencies:
 .. code-block:: shell
 
    $ conan create conan/waf-generator user/stable
-   $ conan create conan/trng user/stable
-   $ conan install .
+   $ conan create conan/trng 4.22user/stable
+   $ conan install . --build missing
 
 Now we are ready to configure and build ripples:
 
