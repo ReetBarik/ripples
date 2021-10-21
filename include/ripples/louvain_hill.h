@@ -55,12 +55,14 @@
 #include "spdlog/spdlog.h"
 #ifdef RIPPLES_ENABLE_CUDA
 #include "cuda_runtime.h"
+#include "ripples/cuda/cuda_utils.h"
 #endif
 
 namespace ripples {
 
 struct LouvainHillConfiguration : public HillClimbingConfiguration {
   std::string communityList;
+  size_t num_threads_d1{4};
   void addCmdOptions(CLI::App &app) {
     AlgorithmConfiguration::addCmdOptions(app);
 
@@ -72,6 +74,11 @@ struct LouvainHillConfiguration : public HillClimbingConfiguration {
     app.add_option(
        "--streaming-gpu-workers", streaming_gpu_workers,
        "The number of GPU workers for the CPU+GPU streaming engine.")
+    ->group("Streaming-Engine Options");
+
+    app.add_option(
+       "--concurrent-partitions", num_threads_d1,
+       "The number of partitions to be processed parallely.")
     ->group("Streaming-Engine Options");
   }
 };
@@ -100,20 +107,19 @@ std::vector<typename GraphTy::vertex_type> FindMostInfluentialSeedSet(std::vecto
   Compare<vertex_type> cmp;
   
   omp_set_nested(1);
-  int num_threads_d1 = 4, num_threads_d2;
+  int num_threads_d1 = CFG.num_threads_d1, num_threads_d2;
   
-  num_threads_d2 = std::ceil(omp_get_max_threads() / num_threads_d1);
+  num_threads_d2 = std::floor(omp_get_max_threads() / num_threads_d1);
 
   
-  size_t total_gpu = 8; 
-  // #if RIPPLES_ENABLE_CUDA
-  // CFG.streaming_gpu_workers = cuda_num_devices() / num_threads_d1;
-  // total_gpu = cuda_num_devices();
-  // #endif
+  size_t total_gpu = 0; 
+  #if RIPPLES_ENABLE_CUDA
+  total_gpu = int(cuda_num_devices() / num_threads_d1) * num_threads_d1;
+  CFG.streaming_gpu_workers = total_gpu / num_threads_d1;
+  #endif
   spdlog::get("console")->flush();
 
   CFG.streaming_workers = num_threads_d2;
-  CFG.streaming_gpu_workers = total_gpu / num_threads_d1;
   CFG.streaming_workers -= CFG.streaming_gpu_workers;
 
   // Init on heap per community

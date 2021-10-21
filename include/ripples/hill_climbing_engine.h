@@ -539,6 +539,7 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy> {
   void svc_loop(std::atomic<size_t> &mpmc_head, ItrTy B, ItrTy E,
                 std::vector<ex_time_ms> &record) {
     size_t offset = 0;
+    cuda_set_device(ctx_->gpu_id);  //Bug fix to prevent cuda device not ready during louvain-hill
     while ((offset = mpmc_head.fetch_add(batch_size_)) < std::distance(B, E)) {
       auto first = B;
       std::advance(first, offset);
@@ -653,58 +654,6 @@ class SeedSelectionEngine {
       }
     }
   }
-
-  SeedSelectionEngine(const SeedSelectionEngine &O) 
-      : G_(O.G_),
-        count_(O.G_.num_nodes()),
-        S_(),
-        logger_(O.logger_) {
-
-        //TODO::Implement this
-
-        }
-
-  SeedSelectionEngine(SeedSelectionEngine &&O)       
-        : G_(O.G_),
-        count_(O.G_.num_nodes()),
-        S_(O.S_),
-        logger_(O.logger_) {
-
-        workers_.resize(O.workers_.size());
-        cpu_workers_.resize(O.cpu_workers_.size());
-        size_t num_threads = O.cpu_workers_.size(); 
-        #if RIPPLES_ENABLE_CUDA
-        gpu_workers_.resize(O.gpu_workers_.size()) ;
-        cuda_contexts_.resize(O.cuda_contexts_.size()) ;
-        num_threads +=  O.gpu_workers_.size();
-        #endif
-
-        #pragma omp parallel num_threads(num_threads)
-        {
-          int rank = omp_get_thread_num();
-          if (rank < cpu_workers_.size()) {
-            auto w = new cpu_worker_type(G_, count_, S_);
-            workers_[rank] = w;
-            cpu_workers_[rank] = w;
-            logger_->debug("> mapping: omp {}\t->CPU", rank);
-          } else {
-          #if RIPPLES_ENABLE_CUDA
-          size_t num_devices = cuda_num_devices();
-          size_t device_id = rank % num_devices;
-          logger_->debug("> mapping: omp {}\t->GPU {}/{}", rank, device_id,
-                         num_devices);
-          logger_->trace("Building Cuda Context");
-          cuda_contexts_[rank - cpu_workers_.size()] = cuda_make_ctx(G_, device_id);
-          typename gpu_worker_type::config_t gpu_conf(gpu_workers_.size());
-          auto w = new gpu_worker_type(gpu_conf, G_, cuda_contexts_[rank - cpu_workers_.size()],
-                                       count_, S_);
-          workers_[rank] = w;
-          gpu_workers_[rank - cpu_workers_.size()] = w;
-          logger_->trace("Cuda Context Built!");
-          #endif
-          }
-        }
-      }
 
   ~SeedSelectionEngine() {
     // Free workers.
