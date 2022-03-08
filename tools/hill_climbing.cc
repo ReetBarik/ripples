@@ -40,6 +40,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include <fstream>
+#include <iostream>
 #include "ripples/hill_climbing.h"
 #include "ripples/configuration.h"
 #include "ripples/graph.h"

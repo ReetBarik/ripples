@@ -608,7 +608,7 @@ class SeedSelectionEngine {
  public:
   using ex_time_ms = std::chrono::duration<double, std::milli>;
 
-  SeedSelectionEngine(const GraphTy &G, size_t cpu_workers, size_t gpu_workers, std::string loggerName = "SeedSelectionEngine", size_t num_gpu_devices = 0, size_t first_gpu_id = 0)
+  SeedSelectionEngine(const GraphTy &G, size_t cpu_workers, size_t gpu_workers, std::string loggerName = "SeedSelectionEngine", size_t num_gpu_devices = 0, size_t first_gpu_id = 0, bool oversubscribe = false)
       : G_(G),
         count_(G_.num_nodes()),
         S_(),
@@ -640,6 +640,8 @@ class SeedSelectionEngine {
         else 
           num_devices = num_gpu_devices;
         size_t device_id = rank % num_devices + first_gpu_id;
+        if (oversubscribe)
+          device_id = first_gpu_id;
         logger_->debug("> mapping: omp {}\t->GPU {}/{}", rank, device_id,
                        num_devices);
         logger_->trace("Building Cuda Context");
@@ -668,6 +670,10 @@ class SeedSelectionEngine {
   }
 
   auto get_next_seed(ItrTy B, ItrTy E, std::vector<std::vector<ex_time_ms>> &record) {
+
+    if (G_.num_nodes() == S_.size())
+      return std::pair<vertex_type, size_t> (-1, 0);  //This should terminate Hill-climbing and needs to handled 
+
     record.resize(workers_.size());
     #pragma omp parallel for
       for (size_t j = 0; j < count_.size(); ++j) count_[j] = 0;
@@ -706,10 +712,14 @@ class SeedSelectionEngine {
     std::vector<vertex_type> result;
     result.reserve(k);
     for (size_t i = 0; i < k; ++i) {
-      vertex_type v; size_t count; 
+      vertex_type v; size_t count;
+      auto start = std::chrono::high_resolution_clock::now(); 
       std::tie(v,count)  = get_next_seed(B, E, record);
+      auto end = std::chrono::high_resolution_clock::now(); 
+      using ex_time_ms = std::chrono::duration<double, std::milli>;
+      ex_time_ms time = end - start;
       result.push_back(v);
-      logger_->trace("Seed {} : {}[{}] = {}", i, v, G_.convertID(v), count);
+      logger_->trace("Seed {} : {}[{}] = {} in {}", i, v, G_.convertID(v), count, time.count());
     }
 
     logger_->trace("End Seed Selection");

@@ -115,7 +115,7 @@ std::vector<typename GraphTy::vertex_type> FindMostInfluentialSeedSet(std::vecto
   size_t total_gpu = 0; 
   #if RIPPLES_ENABLE_CUDA
   total_gpu = int(cuda_num_devices() / num_threads_d1) * num_threads_d1;
-  CFG.streaming_gpu_workers = total_gpu / num_threads_d1;
+  CFG.streaming_gpu_workers = 2 * (total_gpu / num_threads_d1);
   #endif
   spdlog::get("console")->flush();
 
@@ -141,8 +141,10 @@ std::vector<typename GraphTy::vertex_type> FindMostInfluentialSeedSet(std::vecto
 
   std::vector<SeedSelectionEngine<GraphFwd, std::vector<Bitmask<int>>::iterator>*> SEV;
   SEV.reserve(communities.size());
+
+  bool oversubscribe = true; 
   for (size_t i = 0; i < communities.size(); ++i) {
-    auto S = new SeedSelectionEngine<GraphFwd, std::vector<Bitmask<int>>::iterator>(communities[i], CFG.streaming_workers, CFG.streaming_gpu_workers, "SeedSelectionEngine" + std::to_string(i), CFG.streaming_gpu_workers, (i % num_threads_d1) * CFG.streaming_gpu_workers);
+    auto S = new SeedSelectionEngine<GraphFwd, std::vector<Bitmask<int>>::iterator>(communities[i], CFG.streaming_workers, CFG.streaming_gpu_workers, "SeedSelectionEngine" + std::to_string(i), CFG.streaming_gpu_workers, oversubscribe ? (i % num_threads_d1) : (i % num_threads_d1) * CFG.streaming_gpu_workers, oversubscribe);
     SEV[i] = S;
   }
   while (!std::all_of(active_communities.begin(), active_communities.end(), [](const uint64_t &v) -> bool { return v == 0; })) {
@@ -152,16 +154,23 @@ std::vector<typename GraphTy::vertex_type> FindMostInfluentialSeedSet(std::vecto
     for (size_t i = 0; i < communities.size(); ++i) {
       if (active_communities[i] == 0) continue;
 
-     
+        // std::cout << "Heap: \n";
+        // for (size_t j = 0; j < global_heap.size(); j++)
+        //   std::cout << global_heap[j].first << "\t";
+        // std::cout << "\n";
 
-        vertex_contribution_pair vcp = SEV[i]->get_next_seed(sampled_graphs[i].begin(), sampled_graphs[i].end(), R[i].SeedSelectionTasks);
-        
-        vcp.first = communities[i].convertID(vcp.first);
+      vertex_contribution_pair vcp = SEV[i]->get_next_seed(sampled_graphs[i].begin(), sampled_graphs[i].end(), R[i].SeedSelectionTasks);
+      if (vcp.first == -1) {
+        active_communities[i] = 0;
+        continue;
+      }
+      vcp.first = communities[i].convertID(vcp.first);
 
-
+      // std::cout << "Community: " << i << "\t" << "Vertex: " << vcp.first << "\n";
       // Handle the global index insertion
       std::lock_guard<std::mutex> _(global_heap_mutex);
       std::pop_heap(global_heap.begin(), global_heap.end(), heap_cmp);
+      // std::cout << "Smallest: " << global_heap.back().first << "\n";
       global_heap.back() = vcp;
       std::push_heap(global_heap.begin(), global_heap.end(), heap_cmp);
 
@@ -170,6 +179,7 @@ std::vector<typename GraphTy::vertex_type> FindMostInfluentialSeedSet(std::vecto
   }
 
   std::pop_heap(global_heap.begin(), global_heap.end(), heap_cmp);
+  // std::cout << "Remove: " << global_heap.back().first << "\n";
   global_heap.pop_back();
 
   double coverage = 0;
