@@ -96,16 +96,23 @@ auto GetExperimentRecord(
   return experiment;
 }
 
+}  // namespace ripples
+
+ripples::ToolConfiguration<ripples::LouvainHillConfiguration> CFG;
+
 void parse_command_line(int argc, char** argv) {
   CFG.ParseCmdOptions(argc, argv);
 #pragma omp single
   CFG.streaming_workers = omp_get_max_threads();
 }
-}  // namespace ripples
 
 
 int main(int argc, char** argv) {
 	MPI_Init(NULL, NULL);
+
+	auto console = spdlog::stdout_color_st("console");
+	spdlog::set_level(spdlog::level::trace);
+	parse_command_line(argc, argv);
 
 	int world_size;
 	MPI_Comm_size(MPI_COMM_WORLD, &world_size);
@@ -114,11 +121,6 @@ int main(int argc, char** argv) {
 	int world_rank;
 	MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
 	console->info("Louvain-HillClimbing Rank : {}", world_rank);
-
-	auto console = spdlog::stdout_color_st("console");
-	parse_command_line(argc, argv);
-
-	spdlog::set_level(spdlog::level::trace);
 
 
 	trng::lcg64 weightGen;
@@ -190,24 +192,24 @@ int main(int argc, char** argv) {
 		                              ripples::omp_parallel_tag{});
 		auto end = std::chrono::high_resolution_clock::now();
 			
-		int *times;
-		int time = end - start;
+		// int *times;
+		// int time = end - start;
 
-		if (world_rank == 0) { 
-			times = (int *)malloc(world_size * sizeof(int));
-		}
+		// if (world_rank == 0) { 
+		// 	times = (int *)malloc(world_size * sizeof(int));
+		// }
 
-		MPI_Gather(&time, 1, MPI_INT, times, 1, MPI_INT, 0, MPI_COMM_WORLD);
+		// MPI_Gather(&time, 1, MPI_INT, times, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
-		if (world_rank == 0) { 
-			int max = time;
-			for ( int i = 1; i < world_size; i++) {
-				if (times[i] > max)
-					max = times[i];
-			}
-		}
+		// if (world_rank == 0) { 
+		// 	int max = time;
+		// 	for ( int i = 1; i < world_size; i++) {
+		// 		if (times[i] > max)
+		// 			max = times[i];
+		// 	}
+		// }
 
-		R[0].Total = max;
+		R[0].Total = end - start;
 
 	} else if (CFG.diffusionModel == "LT") {
 		auto start = std::chrono::high_resolution_clock::now();
@@ -216,24 +218,24 @@ int main(int argc, char** argv) {
 		             ripples::omp_parallel_tag{});
 		auto end = std::chrono::high_resolution_clock::now();
 			
-		int *times;
-		int time = end - start;
+		// int *times;
+		// int time = end - start;
 
-		if (world_rank == 0) { 
-			times = (int *)malloc(world_size * sizeof(int));
-		}
+		// if (world_rank == 0) { 
+		// 	times = (int *)malloc(world_size * sizeof(int));
+		// }
 
-		MPI_Gather(&time, 1, MPI_INT, times, 1, MPI_INT, 0, MPI_COMM_WORLD);
+		// MPI_Gather(&time, 1, MPI_INT, times, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
-		if (world_rank == 0) { 
-			int max = time;
-			for ( int i = 1; i < world_size; i++) {
-				if (times[i] > max)
-					max = times[i];
-			}
-		}
+		// if (world_rank == 0) { 
+		// 	int max = time;
+		// 	for ( int i = 1; i < world_size; i++) {
+		// 		if (times[i] > max)
+		// 			max = times[i];
+		// 	}
+		// }
 
-		R[0].Total = max;
+		R[0].Total = end - start;
 
 	}
 	console->info("Louvain MPI-Hill-Climbing : {}ms", R[0].Total.count());

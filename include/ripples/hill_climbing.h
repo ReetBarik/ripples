@@ -68,7 +68,7 @@ struct HillClimbingConfiguration : public AlgorithmConfiguration {
   size_t samples{1000};
   size_t streaming_workers{0};
   size_t streaming_gpu_workers{0};
-
+  std::string SubsetFileName{""};
   //! \brief Add command line options to configure the Hill Climbing Algorithm.
   //!
   //! \param app The command-line parser object.
@@ -80,6 +80,10 @@ struct HillClimbingConfiguration : public AlgorithmConfiguration {
     app.add_option(
            "--streaming-gpu-workers", streaming_gpu_workers,
            "The number of GPU workers for the CPU+GPU streaming engine.")
+        ->group("Streaming-Engine Options");
+    app.add_option(
+           "--subset", SubsetFileName,
+           "Pruned search space of vertices")
         ->group("Streaming-Engine Options");
   }
 };
@@ -138,11 +142,11 @@ std::vector<Bitmask<int>> SampleFrom(GraphTy &G, ConfTy &CFG, GeneratorTy &gen,
   return samples;
 }
 
-template <typename GraphTy, typename GraphMaskItrTy, typename ConfigTy>
+template <typename GraphTy, typename GraphMaskItrTy, typename ConfigTy, typename VertexTy>
 auto SeedSelection(GraphTy &G, GraphMaskItrTy B, GraphMaskItrTy E,
-                   ConfigTy &CFG, HillClimbingExecutionRecord &record) {
+                   ConfigTy &CFG, HillClimbingExecutionRecord &record, std::set<VertexTy> s) {
   SeedSelectionEngine<GraphTy, GraphMaskItrTy> countingEngine(
-      G, CFG.streaming_workers, CFG.streaming_gpu_workers);
+      G, CFG.streaming_workers, CFG.streaming_gpu_workers, s);
   auto start = std::chrono::high_resolution_clock::now();
   auto S = countingEngine.exec(B, E, CFG.k, record.SeedSelectionTasks);
   auto end = std::chrono::high_resolution_clock::now();
@@ -152,15 +156,15 @@ auto SeedSelection(GraphTy &G, GraphMaskItrTy B, GraphMaskItrTy E,
 }
 
 template <typename GraphTy, typename GeneratorTy, typename diff_model_tag,
-          typename ConfTy>
+          typename ConfTy, typename VertexTy>
 auto HillClimbing(GraphTy &G, ConfTy &CFG, GeneratorTy &gen,
                   HillClimbingExecutionRecord &record,
-                  diff_model_tag &&model_tag) {
+                  diff_model_tag &&model_tag, std::set<VertexTy> s) {
   auto sampled_graphs =
       SampleFrom(G, CFG, gen, record, std::forward<diff_model_tag>(model_tag));
 
   auto S = SeedSelection(G, sampled_graphs.begin(), sampled_graphs.end(), CFG,
-                         record);
+                         record, s);
 
   return S;
 }

@@ -120,19 +120,28 @@ int main(int argc, char** argv) {
 
   ripples::HillClimbingExecutionRecord R;
 
+  std::ifstream is(ripples::configuration().SubsetFileName);
+  int x;
+  std::set<typename GraphFwd::vertex_type> s {};
+  while (is >> x) {
+    s.insert(x);
+  }
+  is.close();
+
+
   ripples::configuration().streaming_workers -=
       ripples::configuration().streaming_gpu_workers;
 
   if (ripples::configuration().diffusionModel == "IC") {
     auto start = std::chrono::high_resolution_clock::now();
     seeds = HillClimbing(G, ripples::configuration(), generator, R,
-                         ripples::independent_cascade_tag{});
+                         ripples::independent_cascade_tag{}, s);
     auto end = std::chrono::high_resolution_clock::now();
     R.Total = end - start;
   } else if (ripples::configuration().diffusionModel == "LT") {
     auto start = std::chrono::high_resolution_clock::now();
     seeds = HillClimbing(G, ripples::configuration(), generator, R,
-                         ripples::linear_threshold_tag{});
+                         ripples::linear_threshold_tag{}, s);
     auto end = std::chrono::high_resolution_clock::now();
     R.Total = end - start;
   }

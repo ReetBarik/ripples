@@ -43,7 +43,7 @@
 #include <algorithm>
 #include <fstream>
 #include <iterator>
-
+#include <iostream>
 #include "ripples/configuration.h"
 #include "ripples/diffusion_simulation.h"
 #include "ripples/graph.h"
@@ -138,6 +138,15 @@ int main(int argc, char *argv[]) {
   trng::lcg64 generator;
   generator.seed(0UL);
   generator.split(2, 1);
+
+  std::ifstream is(CFG.SubsetFileName);
+  int x;
+  std::set<typename GraphFwd::vertex_type> s {};
+  while (is >> x) {
+    s.insert(x);
+  }
+  is.close();
+
   
   std::ofstream perf(CFG.OutputFile);
   if (CFG.parallel) {
@@ -153,7 +162,7 @@ int main(int argc, char *argv[]) {
       
       std::tie(seeds, R) = LouvainHill(communities, CFG, R, generator, 
                                       ripples::independent_cascade_tag{},
-                                      ripples::omp_parallel_tag{});
+                                      ripples::omp_parallel_tag{}, s);
       auto end = std::chrono::high_resolution_clock::now();
       R[0].Total = end - start;
     } else if (CFG.diffusionModel == "LT") {
@@ -161,7 +170,7 @@ int main(int argc, char *argv[]) {
       
       std::tie(seeds, R) =
           LouvainHill(communities, CFG, R, generator, ripples::linear_threshold_tag{},
-                     ripples::omp_parallel_tag{});
+                     ripples::omp_parallel_tag{}, s);
       auto end = std::chrono::high_resolution_clock::now();
       R[0].Total = end - start;
     }

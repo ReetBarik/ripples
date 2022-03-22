@@ -85,10 +85,10 @@ struct LouvainHillConfiguration : public HillClimbingConfiguration {
   }
 };
 
+template <typename vertex_type>
+std::pair<vertex_type, size_t>* merge (std::pair<vertex_type, size_t>* a1, std::pair<vertex_type, size_t>* a2, int size) {
 
-std::pair<int, size_t>* merge (std::pair<int, size_t>* a1, std::pair<int, size_t>* a2, int size) {
-
-	std::pair<int, size_t>* temp = (std::pair<int, size_t>*)malloc(2 * sizeof(std::pair<int, size_t>) * size);
+	std::pair<vertex_type, size_t>* temp = (std::pair<vertex_type, size_t>*)malloc(2 * sizeof(std::pair<vertex_type, size_t>) * size);
 	int i = 0, j = 0, h = 0;
 
 	while(i < size && j < size) {
@@ -121,11 +121,12 @@ std::pair<int, size_t>* merge (std::pair<int, size_t>* a1, std::pair<int, size_t
 
 }
 
-std::pair<int, size_t>* MyAllReduce(int rank, int size, std::pair<int, size_t> *localArray, int p) {
+template <typename vertex_type>
+std::pair<vertex_type, size_t>* MyAllReduce(int rank, int size, std::pair<vertex_type, size_t> *localArray, int p) {
 
 	int partner;
-	std::pair<int, size_t>* result = (std::pair<int, size_t>*)malloc(sizeof(std::pair<int, size_t>) * size);
-	std::pair<int, size_t>* temp;
+	std::pair<vertex_type, size_t>* result = (std::pair<vertex_type, size_t>*)malloc(sizeof(std::pair<vertex_type, size_t>) * size);
+	std::pair<vertex_type, size_t>* temp;
 	MPI_Status status;
 
 	
@@ -133,7 +134,7 @@ std::pair<int, size_t>* MyAllReduce(int rank, int size, std::pair<int, size_t> *
 
 		partner = rank ^ (1 << t);																																									// XOR and bitshift
 
-		MPI_Sendrecv(localArray, sizeof(std::pair<int, size_t>) * size, MPI_BYTE, partner, 0, result, sizeof(std::pair<int, size_t>) * size, MPI_BYTE, partner, 0, MPI_COMM_WORLD, &status);    	// exchange with partner process
+		MPI_Sendrecv(localArray, sizeof(std::pair<vertex_type, size_t>) * size, MPI_BYTE, partner, 0, result, sizeof(std::pair<vertex_type, size_t>) * size, MPI_BYTE, partner, 0, MPI_COMM_WORLD, &status);    	// exchange with partner process
 		
 		temp = merge(localArray, result, size);
 
@@ -177,8 +178,7 @@ std::vector<typename GraphTy::vertex_type> FindMostInfluentialSeedSet(std::vecto
 
   using vertex_type = typename GraphTy::vertex_type;
 
-  MPI_Op merge;
-  MPI_Op_create( heapMerge, True, &merge );
+
   Compare<vertex_type> cmp;
   
   omp_set_nested(1);
@@ -199,7 +199,7 @@ std::vector<typename GraphTy::vertex_type> FindMostInfluentialSeedSet(std::vecto
 
   // Init on heap per community
   using vertex_contribution_pair = std::pair<vertex_type, size_t>;
-  std::vector<vertex_contribution_pair>* global_heap = (std::pair<int, size_t>*)malloc(sizeof(std::pair<int, size_t>) * (CFG.k + 1));
+  std::pair<vertex_type, size_t>* global_heap = (std::pair<vertex_type, size_t>*)malloc(sizeof(std::pair<vertex_type, size_t>) * (CFG.k + 1));
       
   std::vector<vertex_contribution_pair> local_heap(
       CFG.k + 1, vertex_contribution_pair{-1, 0});
@@ -231,7 +231,7 @@ std::vector<typename GraphTy::vertex_type> FindMostInfluentialSeedSet(std::vecto
 
   
 
-  	for (size_t j = 0; j < (firstIter ? std::ceil((CFG.k + 1) / communities.size())) : 1 ; j++) {
+  	for (size_t j = 0; j < (firstIter ? std::ceil((CFG.k + 1) / communities.size()) : 1) ; j++) {
 
 #pragma omp parallel for schedule(static) num_threads(num_threads_d1) 
 	    for (size_t i = 0; i < communities.size(); ++i) {
@@ -259,7 +259,7 @@ std::vector<typename GraphTy::vertex_type> FindMostInfluentialSeedSet(std::vecto
     std::sort_heap(local_heap.begin(), local_heap.end(), heap_cmp);
     // ALL REDUCE 
     vertex_contribution_pair* h = &local_heap[0];
-    global_heap = MyAllReduce(rank, CFG.k + 1, h, p);
+    global_heap = MyAllReduce(world_rank, CFG.k + 1, h, world_size);
     
     for (size_t j = 0; j < CFG.k + 1; j++) {
     	local_heap[j].first = global_heap[j].first;

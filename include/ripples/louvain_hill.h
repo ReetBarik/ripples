@@ -80,6 +80,10 @@ struct LouvainHillConfiguration : public HillClimbingConfiguration {
        "--concurrent-partitions", num_threads_d1,
        "The number of partitions to be processed parallely.")
     ->group("Streaming-Engine Options");
+    app.add_option(
+       "--subset", SubsetFileName,
+       "Pruned search space of vertices")
+    ->group("Streaming-Engine Options");
   }
 };
 
@@ -96,10 +100,10 @@ struct Compare {
 }  // namespace
 
 
-template <typename GraphTy, typename RecordTy, typename ConfTy, typename execution_tag>
+template <typename GraphTy, typename RecordTy, typename ConfTy, typename execution_tag, typename VertexTy>
 std::vector<typename GraphTy::vertex_type> FindMostInfluentialSeedSet(std::vector<GraphTy> & communities, std::vector<std::vector<Bitmask<int>>> &sampled_graphs,
                             std::vector<RecordTy> &R, ConfTy &CFG,
-                            execution_tag &&ex_tag) {
+                            execution_tag &&ex_tag, std::set<VertexTy> s) {
   spdlog::get("console")->info("SeedSelect start");
 
   using vertex_type = typename GraphTy::vertex_type;
@@ -115,7 +119,7 @@ std::vector<typename GraphTy::vertex_type> FindMostInfluentialSeedSet(std::vecto
   size_t total_gpu = 0; 
   #if RIPPLES_ENABLE_CUDA
   total_gpu = int(cuda_num_devices() / num_threads_d1) * num_threads_d1;
-  CFG.streaming_gpu_workers = 2 * (total_gpu / num_threads_d1);
+  CFG.streaming_gpu_workers = 1 * (total_gpu / num_threads_d1);
   #endif
   spdlog::get("console")->flush();
 
@@ -142,14 +146,19 @@ std::vector<typename GraphTy::vertex_type> FindMostInfluentialSeedSet(std::vecto
   std::vector<SeedSelectionEngine<GraphFwd, std::vector<Bitmask<int>>::iterator>*> SEV;
   SEV.reserve(communities.size());
 
-  bool oversubscribe = true; 
+  bool oversubscribe = false; 
   for (size_t i = 0; i < communities.size(); ++i) {
-    auto S = new SeedSelectionEngine<GraphFwd, std::vector<Bitmask<int>>::iterator>(communities[i], CFG.streaming_workers, CFG.streaming_gpu_workers, "SeedSelectionEngine" + std::to_string(i), CFG.streaming_gpu_workers, oversubscribe ? (i % num_threads_d1) : (i % num_threads_d1) * CFG.streaming_gpu_workers, oversubscribe);
+    // std::set<vertex_type> s = {};
+    auto S = new SeedSelectionEngine<GraphFwd, std::vector<Bitmask<int>>::iterator>(communities[i], CFG.streaming_workers, CFG.streaming_gpu_workers, s, "SeedSelectionEngine" + std::to_string(i), CFG.streaming_gpu_workers, oversubscribe ? (i % num_threads_d1) : (i % num_threads_d1) * CFG.streaming_gpu_workers, oversubscribe);
     SEV[i] = S;
   }
+  using ex_time_ms = std::chrono::duration<double, std::milli>;
+  
   while (!std::all_of(active_communities.begin(), active_communities.end(), [](const uint64_t &v) -> bool { return v == 0; })) {
-
-#pragma omp parallel for schedule(static) num_threads(num_threads_d1)   
+    double avgtimePerBatchCPU = 0.0;
+    double avgtimePerBatchGPU = 0.0;
+    size_t active_comm = 0;
+#pragma omp parallel for schedule(static) num_threads(num_threads_d1) reduction(+:avgtimePerBatchCPU,avgtimePerBatchGPU) 
 
     for (size_t i = 0; i < communities.size(); ++i) {
       if (active_communities[i] == 0) continue;
@@ -166,7 +175,7 @@ std::vector<typename GraphTy::vertex_type> FindMostInfluentialSeedSet(std::vecto
       }
       vcp.first = communities[i].convertID(vcp.first);
 
-      // std::cout << "Community: " << i << "\t" << "Vertex: " << vcp.first << "\n";
+      // std::cout << "Community: " << i << "\t" << "CPU: " << SEV[i]->timePerBatchCPUavg << ", GPU: " << SEV[i]->timePerBatchGPUavg << "\n";
       // Handle the global index insertion
       std::lock_guard<std::mutex> _(global_heap_mutex);
       std::pop_heap(global_heap.begin(), global_heap.end(), heap_cmp);
@@ -175,7 +184,15 @@ std::vector<typename GraphTy::vertex_type> FindMostInfluentialSeedSet(std::vecto
       std::push_heap(global_heap.begin(), global_heap.end(), heap_cmp);
 
       if (global_heap.front() == vcp) active_communities[i] = 0;
+
+      active_comm ++;
+      avgtimePerBatchCPU += SEV[i]->timePerBatchCPUavg;
+      avgtimePerBatchGPU += SEV[i]->timePerBatchGPUavg;
     }
+    avgtimePerBatchCPU /= active_comm;
+    avgtimePerBatchGPU /= active_comm;
+    // std::cout << "CPU: " << avgtimePerBatchCPU << ", GPU: " << avgtimePerBatchGPU << "\n";
+    // std::cout << "End of iter" << "\n";
   }
 
   std::pop_heap(global_heap.begin(), global_heap.end(), heap_cmp);
@@ -220,10 +237,10 @@ std::vector<typename GraphTy::vertex_type> FindMostInfluentialSeedSet(std::vecto
 //! \param model_tag The diffusion model tag.
 //! \param ex_tag The execution policy tag.
 template <typename GraphTy, typename ConfTy, typename RecordTy,
-           typename GeneratorTy, typename diff_model_tag>
+           typename GeneratorTy, typename diff_model_tag, typename VertexTy>
 auto LouvainHill(std::vector<GraphTy> &communities, ConfTy &CFG, std::vector<RecordTy> &R,
                 GeneratorTy gen, diff_model_tag &&model_tag,
-                omp_parallel_tag &&ex_tag) {
+                omp_parallel_tag &&ex_tag, std::set<VertexTy> s) {
   using vertex_type = typename GraphTy::vertex_type;
   size_t k = CFG.k;
 
@@ -245,7 +262,7 @@ auto LouvainHill(std::vector<GraphTy> &communities, ConfTy &CFG, std::vector<Rec
 
   // Global seed selection using the heap
   auto S = FindMostInfluentialSeedSet(communities, sampled_graphs, R, CFG,
-                                  std::forward<omp_parallel_tag>(ex_tag));
+                                  std::forward<omp_parallel_tag>(ex_tag), s);
 
   return std::make_pair(S, R);
 }

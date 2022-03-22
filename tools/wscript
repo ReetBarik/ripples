@@ -97,3 +97,7 @@ def build(bld):
     bld(features='cxx cxxprogram', source='mpi-imm.cc', target='mpi-imm',
         use=cuda_acc_tools_deps + ['cuda_imm_bfs'], cuda=bld.env.ENABLE_CUDA,
         cxxflags=cuda_acc_cxx_flags)
+
+    bld(features='cxx cxxprogram', source='mpi-louvain-hill.cc', target='mpi-louvain-hill',
+        use=cuda_acc_tools_deps + ['cuda_hc_bfs'], cuda=bld.env.ENABLE_CUDA,
+        cxxflags=cuda_acc_cxx_flags)
