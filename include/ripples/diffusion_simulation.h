@@ -108,7 +108,9 @@ auto run_simulation(const GraphTy &G, Iterator begin, Iterator end,
       ++level;
     }
   }
-
+  for (int i = 0; i != visited.size(); ++i) {
+    if(visited[i]) std::cout << i << ",";
+  }
   return std::make_pair(std::count(visited.begin(), visited.end(), true),
                         level);
 }

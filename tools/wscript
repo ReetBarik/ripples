@@ -67,15 +67,16 @@ def build(bld):
         cuda_acc_tools_deps += ['memkind']
         cuda_acc_cxx_flags += ['-DENABLE_MEMKIND=1']
 
+    if bld.env.ENABLE_METALL:
+        cuda_acc_tools_deps += ['metall', 'boost']
+        cuda_acc_cxx_flags += ['-DENABLE_METALL=1']
+
     bld(features='cxx cxxprogram', source='imm.cc', target='imm',
         use=cuda_acc_tools_deps + ['cuda_imm_bfs'], cuda=bld.env.ENABLE_CUDA,
         cxxflags=cuda_acc_cxx_flags)
 
     bld(features='cxx cxxprogram', source='louvain-imm.cc', target='louvain-imm',
         use=tools_deps)
-
-    bld(features='cxx cxxprogram', source='louvain-hill.cc', target='louvain-hill',
-        use=cuda_acc_tools_deps + ['cuda_hc_bfs'], cxxflags=cuda_acc_cxx_flags, cuda=bld.env.ENABLE_CUDA)
 
     bld(features='cxx cxxprogram', source='simulator.cc', target='simulator',
         use=tools_deps)
@@ -96,8 +97,4 @@ def build(bld):
 
     bld(features='cxx cxxprogram', source='mpi-imm.cc', target='mpi-imm',
         use=cuda_acc_tools_deps + ['cuda_imm_bfs'], cuda=bld.env.ENABLE_CUDA,
-        cxxflags=cuda_acc_cxx_flags)
-
-    bld(features='cxx cxxprogram', source='mpi-louvain-hill.cc', target='mpi-louvain-hill',
-        use=cuda_acc_tools_deps + ['cuda_hc_bfs'], cuda=bld.env.ENABLE_CUDA,
         cxxflags=cuda_acc_cxx_flags)

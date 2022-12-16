@@ -569,7 +569,7 @@ class StreamingFindMostInfluential {
     InitialCount();
 
     auto queue = getHeap();
-    k = std::min(k, vertex_coverage_.size());
+
     std::vector<vertex_type> result;
     result.reserve(k);
     size_t uncovered = RRRsets_.size();

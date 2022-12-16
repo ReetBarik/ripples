@@ -154,6 +154,7 @@ int main(int argc, char** argv) {
 	  ripples::getCommunitiesSubgraphs<GraphFwd>(Gf, communityVector);
 	console->info("Number of Communities : {}", communities.size());
 
+	int t_communities = communities.size();
 	int n_communities = std::ceil(communities.size() / world_size);
 
 	int start = world_rank * n_communities;
@@ -162,12 +163,13 @@ int main(int argc, char** argv) {
 	if (world_rank == world_size - 1) 
 		end = communities.size() - 1;
 
-	std::vector<GraphFwd> communities_local;
-	communities_local.reserve(end - start + 1);
-
-	for (int i = 0; i < communities_local.size(); i ++)
-		communities_local[i] = communities[start + i];
- 
+	if (start != 0) 
+		communities.erase(communities.begin(), communities.begin() + start);
+	if (end != t_communities - 1) {
+		for (size_t i = t_communities; i > end + 1; i--) 
+		communities.pop_back();
+	}
+	
 
 	trng::lcg64 generator;
 	generator.seed(0UL);
@@ -178,7 +180,7 @@ int main(int argc, char** argv) {
 	nlohmann::json executionLog;
 
 	std::vector<typename GraphFwd::vertex_type> seeds;
-	std::vector<ripples::HillClimbingExecutionRecord> R(communities_local.size());
+	std::vector<ripples::HillClimbingExecutionRecord> R(communities.size());
 
 	CFG.streaming_workers -= CFG.streaming_gpu_workers;
 
@@ -187,7 +189,7 @@ int main(int argc, char** argv) {
 
 
 
-		std::tie(seeds, R) = LouvainHill(communities_local, CFG, R, generator, 
+		std::tie(seeds, R) = LouvainHill(communities, CFG, R, generator, 
 		                              ripples::independent_cascade_tag{},
 		                              ripples::omp_parallel_tag{});
 		auto end = std::chrono::high_resolution_clock::now();
@@ -214,7 +216,7 @@ int main(int argc, char** argv) {
 	} else if (CFG.diffusionModel == "LT") {
 		auto start = std::chrono::high_resolution_clock::now();
 
-		std::tie(seeds, R) = LouvainHill(communities_local, CFG, R, generator, ripples::linear_threshold_tag{},
+		std::tie(seeds, R) = LouvainHill(communities, CFG, R, generator, ripples::linear_threshold_tag{},
 		             ripples::omp_parallel_tag{});
 		auto end = std::chrono::high_resolution_clock::now();
 			
@@ -244,6 +246,8 @@ int main(int argc, char** argv) {
 	if (world_rank == 0) {
 	std::ofstream perf(CFG.OutputFile);
 	perf << executionLog.dump(2);
+
+	for (size_t i = 0; i < seeds.size(); i++) console->info("Seed {} : {}", i, seeds[i]);
 	}
 
 	MPI_Finalize();

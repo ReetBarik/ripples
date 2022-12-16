@@ -30,3 +30,4 @@ class NvidaCubConan(ConanFile):
         cmake.configure(source_folder='cub-1.12.0')
         cmake.build()
         cmake.install()
+

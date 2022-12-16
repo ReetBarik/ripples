@@ -179,8 +179,10 @@ auto Sampling(const GraphTy &G, const ConfTy &CFG, double l,
   double epsilonPrime = 1.4142135623730951 * epsilon;
 
   double LB = 0;
-  #ifdef ENABLE_MEMKIND
+  #if defined ENABLE_MEMKIND
   RRRsetAllocator<vertex_type> allocator(libmemkind::kinds::DAX_KMEM_PREFERRED);
+  #elif defined ENABLE_METALL
+  RRRsetAllocator<vertex_type> allocator =  metall_manager_instance().get_allocator();
   #else
   RRRsetAllocator<vertex_type> allocator;
   #endif
@@ -232,7 +234,7 @@ auto Sampling(const GraphTy &G, const ConfTy &CFG, double l,
   record.ThetaEstimationTotal = end - start;
 
   record.Theta = theta;
-  std::cout << G.num_nodes() << "," << theta << std::endl;
+  spdlog::get("console")->info("Theta {}", theta);
 
   record.GenerateRRRSets = measure<>::exec_time([&]() {
     if (theta > RR.size()) {
@@ -263,9 +265,11 @@ auto Sampling(const GraphTy &G, const ConfTy &CFG, double l,
   double epsilonPrime = 1.4142135623730951 * epsilon;
 
   double LB = 0;
-  #ifdef ENABLE_MEMKIND
+  #if defined ENABLE_MEMKIND
   RRRsetAllocator<vertex_type> allocator(libmemkind::kinds::DAX_KMEM_PREFERRED);
-  #else
+  #elif defined ENABLE_METALL
+  RRRsetAllocator<vertex_type> allocator =  metall_manager_instance().get_allocator();
+#else
   RRRsetAllocator<vertex_type> allocator;
   #endif
   std::vector<RRRset<GraphTy>> RR;

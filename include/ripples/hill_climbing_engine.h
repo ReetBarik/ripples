@@ -48,7 +48,7 @@
 #include <cstdint>
 #include <memory>
 #include <vector>
-#include <numeric>
+
 #include "omp.h"
 
 #include "spdlog/sinks/stdout_color_sinks.h"
@@ -191,6 +191,7 @@ class HCGPUSamplingWorker : public HCWorker<GraphTy, ItrTy> {
   void svc_loop(std::atomic<size_t> &mpmc_head, ItrTy B, ItrTy E,
                 std::vector<ex_time_ms> &record) {
     size_t offset = 0;
+    cuda_set_device(ctx_->gpu_id);  //Bug fix to prevent cuda device not ready 
     while ((offset = mpmc_head.fetch_add(batch_size_)) < std::distance(B, E)) {
       auto first = B;
       std::advance(first, offset);
@@ -264,7 +265,7 @@ class PhaseEngine {
     cuda_contexts_.resize(gpu_workers);
 #endif
 
-#pragma omp parallel num_threads(num_threads)
+#pragma omp parallel
     {
       int rank = omp_get_thread_num();
       if (rank < cpu_workers) {
@@ -281,7 +282,7 @@ class PhaseEngine {
         logger_->debug("> mapping: omp {}\t->GPU {}/{}", rank, device_id,
                        num_devices);
         logger_->trace("Building Cuda Context");
-        cuda_contexts_[rank - cpu_workers] = cuda_make_ctx(G_, device_id);
+        cuda_contexts_[rank - cpu_workers] = cuda_make_ctx(G, device_id);
         auto rng = master_rng;
         rng.split(num_threads, rank);
         auto w =
@@ -308,7 +309,7 @@ class PhaseEngine {
   }
 
  protected:
-const  GraphTy &G_;
+  const GraphTy &G_;
 
   std::shared_ptr<spdlog::logger> logger_;
 
@@ -338,16 +339,16 @@ class SamplingEngine
 
  public:
   SamplingEngine(const GraphTy &G, PRNGTy &master_rng, size_t cpu_workers,
-                 size_t gpu_workers, std::string loggerName = "SamplingEngine")
+                 size_t gpu_workers)
     : phase_engine(G, master_rng, cpu_workers, gpu_workers,
-                     loggerName) {}
+                     "SamplingEngine") {}
 
   void exec(ItrTy B, ItrTy E, std::vector<std::vector<ex_time_ms>> &record) {
     record.resize(workers_.size());
     mpmc_head_.store(0);
 
     logger_->trace("Start Sampling");
-#pragma omp parallel num_threads(workers_.size())
+#pragma omp parallel
     {
       assert(workers_.size() == omp_get_num_threads());
       size_t rank = omp_get_thread_num();
@@ -355,7 +356,6 @@ class SamplingEngine
     }
     logger_->trace("End Sampling");
   }
-
 
  private:
   using phase_engine::logger_;
@@ -394,7 +394,8 @@ size_t BFS(GraphTy &G, GraphMaskTy &M, Itr b, Itr e, Bitmask<int> &visited) {
 }
 
 template <typename GraphTy, typename GraphMaskTy>
-size_t BFS(GraphTy &G, GraphMaskTy &M, typename GraphTy::vertex_type v, Bitmask<int> visited) {
+size_t BFS(GraphTy &G, GraphMaskTy &M, typename GraphTy::vertex_type v,
+           Bitmask<int> visited) {
   using vertex_type = typename GraphTy::vertex_type;
 
   std::queue<vertex_type> queue;
@@ -426,16 +427,14 @@ class HCCPUCountingWorker : public HCWorker<GraphTy, ItrTy> {
 
  public:
   using ex_time_ms = std::chrono::duration<double, std::milli>;
-  double timePerBatch = 0.0;
+
   HCCPUCountingWorker(const GraphTy &G, std::vector<size_t> &count,
-                      const std::set<vertex_type> &S, const std::set<vertex_type> &s)
-      : HCWorker<GraphTy, ItrTy>(G), count_(count), S_(S), subset_(s) {}
+                      const std::set<vertex_type> &S)
+      : HCWorker<GraphTy, ItrTy>(G), count_(count), S_(S) {}
 
   void svc_loop(std::atomic<size_t> &mpmc_head, ItrTy B, ItrTy E,
                 std::vector<ex_time_ms> &record) {
     size_t offset = 0;
-    size_t b = 0; ex_time_ms temp;
-    double t = 0.0;
     while ((offset = mpmc_head.fetch_add(batch_size_)) < std::distance(B, E)) {
       auto first = B;
       std::advance(first, offset);
@@ -447,11 +446,7 @@ class HCCPUCountingWorker : public HCWorker<GraphTy, ItrTy> {
       batch(first, last);
       auto end = std::chrono::high_resolution_clock::now();
       record.push_back(end - start);
-      temp = (end - start);
-      t += temp.count();
-      b += std::distance(first, last);
     }
-    timePerBatch = t / b;
   }
 
  private:
@@ -462,14 +457,12 @@ class HCCPUCountingWorker : public HCWorker<GraphTy, ItrTy> {
 
       for (vertex_type v = 0; v < G_.num_nodes(); ++v) {
         if (S_.find(v) != S_.end()) continue;
-        if (subset_.find(v) != subset_.end()) {
-          size_t update_count = base_count + 1;
-          if (!visited.get(v)) {
-            update_count = BFS(G_, *itr, v, visited);
-          }
-  #pragma omp atomic
-          count_[v] += update_count;
+        size_t update_count = base_count + 1;
+        if (!visited.get(v)) {
+          update_count = BFS(G_, *itr, v, visited);
         }
+#pragma omp atomic
+        count_[v] += update_count;
       }
     }
   }
@@ -477,7 +470,6 @@ class HCCPUCountingWorker : public HCWorker<GraphTy, ItrTy> {
   static constexpr size_t batch_size_ = 2;
   std::vector<size_t> &count_;
   const std::set<vertex_type> &S_;
-  const std::set<vertex_type> &subset_;
 };
 
 template <typename GraphTy, typename ItrTy>
@@ -490,7 +482,7 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy> {
 
  public:
   using ex_time_ms = std::chrono::duration<double, std::milli>;
-  double timePerBatch = 0;
+
   struct config_t {
     config_t(size_t num_workers)
         : block_size_(bfs_solver_t::traverse_block_size()),
@@ -510,13 +502,12 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy> {
 
   HCGPUCountingWorker(const config_t &conf, const GraphTy &G,
                       cuda_ctx<GraphTy> *ctx, std::vector<size_t> &count,
-                      const std::set<vertex_type> &S, const std::set<vertex_type> &s)
+                      const std::set<vertex_type> &S)
       : HCWorker<GraphTy, ItrTy>(G),
         conf_(conf),
         ctx_(ctx),
         count_(count),
         S_(S),
-        subset_(s),
         edge_filter_(new d_vertex_type[G_.num_edges()]) {
     cuda_set_device(ctx_->gpu_id);
     cuda_stream_create(&cuda_stream_);
@@ -549,9 +540,7 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy> {
   void svc_loop(std::atomic<size_t> &mpmc_head, ItrTy B, ItrTy E,
                 std::vector<ex_time_ms> &record) {
     size_t offset = 0;
-    size_t b = 0; ex_time_ms temp;
-    double t = 0.0;
-    cuda_set_device(ctx_->gpu_id);  //Bug fix to prevent cuda device not ready during louvain-hill
+    cuda_set_device(ctx_->gpu_id);  //Bug fix to prevent cuda device not ready 
     while ((offset = mpmc_head.fetch_add(batch_size_)) < std::distance(B, E)) {
       auto first = B;
       std::advance(first, offset);
@@ -563,11 +552,7 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy> {
       batch(first, last);
       auto end = std::chrono::high_resolution_clock::now();
       record.push_back(end - start);
-      temp = (end - start);
-      t += temp.count();
-      b += std::distance(first, last);
     }
-    timePerBatch = t / b;
   }
 
  private:
@@ -585,19 +570,17 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy> {
       cuda_sync(cuda_stream_);
       for (vertex_type v = 0; v < G_.num_nodes(); ++v) {
         if (S_.find(v) != S_.end()) continue;
-        if (subset_.find(v) != subset_.end()) {
-          size_t update_count = base_count + 1;
-          int m = 1 << (v % (8 * sizeof(int)));
-          if ((visited_[v / (8 * sizeof(int))] && m) == 0) {
-            d_vertex_type count;
-            solver_->traverse(v, base_count, visited_.get(), &count);
-            cuda_sync(cuda_stream_);
+        size_t update_count = base_count + 1;
+        int m = 1 << (v % (8 * sizeof(int)));
+        if ((visited_[v / (8 * sizeof(int))] && m) == 0) {
+          d_vertex_type count;
+          solver_->traverse(v, base_count, visited_.get(), &count);
+          cuda_sync(cuda_stream_);
 
-            update_count = count;
-          }
-  #pragma omp atomic
-          count_[v] += update_count;
+          update_count = count;
         }
+#pragma omp atomic
+        count_[v] += update_count;
       }
     }
   }
@@ -613,7 +596,6 @@ class HCGPUCountingWorker : public HCWorker<GraphTy, ItrTy> {
 
   std::vector<size_t> &count_;
   const std::set<vertex_type> &S_;
-  const std::set<vertex_type> &subset_;
 #endif
 };
 
@@ -626,55 +608,41 @@ class SeedSelectionEngine {
 
  public:
   using ex_time_ms = std::chrono::duration<double, std::milli>;
-  double timePerBatchCPUavg = 0.0;
-  double timePerBatchGPUavg = 0.0;
-  std::vector<double> timePerBatchCPU;
-  std::vector<double> timePerBatchGPU;
 
-  SeedSelectionEngine(const GraphTy &G, size_t cpu_workers, size_t gpu_workers, std::set<vertex_type> s = {}, std::string loggerName = "SeedSelectionEngine", size_t num_gpu_devices = 0, size_t first_gpu_id = 0, bool oversubscribe = false)
+  SeedSelectionEngine(const GraphTy &G, size_t cpu_workers, size_t gpu_workers)
       : G_(G),
         count_(G_.num_nodes()),
         S_(),
-        subset(s),
-        logger_(spdlog::stdout_color_mt(loggerName)) {
+        logger_(spdlog::stdout_color_mt("SeedSelectionEngine")) {
     size_t num_threads = cpu_workers + gpu_workers;
     // Construct workers.
     logger_->debug("Number of Threads = {}", num_threads);
     workers_.resize(num_threads);
     cpu_workers_.resize(cpu_workers);
-    timePerBatchCPU.resize(cpu_workers);
 #if RIPPLES_ENABLE_CUDA
     gpu_workers_.resize(gpu_workers);
     cuda_contexts_.resize(gpu_workers);
-    timePerBatchGPU.resize(gpu_workers);
 #endif
 
-#pragma omp parallel num_threads(num_threads)
+#pragma omp parallel
     {
       int rank = omp_get_thread_num();
       if (rank < cpu_workers) {
-        auto w = new cpu_worker_type(G_, count_, S_, subset);
+        auto w = new cpu_worker_type(G_, count_, S_);
         workers_[rank] = w;
         cpu_workers_[rank] = w;
         logger_->debug("> mapping: omp {}\t->CPU", rank);
       } else {
 #if RIPPLES_ENABLE_CUDA
-        //TODO:: check validity of num_gpu_devices and first_gpu_id
-        size_t num_devices;
-        if (num_gpu_devices == 0)
-          num_devices = cuda_num_devices();
-        else 
-          num_devices = num_gpu_devices;
-        size_t device_id = rank % num_devices + first_gpu_id;
-        if (oversubscribe)
-          device_id = first_gpu_id;
+        size_t num_devices = cuda_num_devices();
+        size_t device_id = rank % num_devices;
         logger_->debug("> mapping: omp {}\t->GPU {}/{}", rank, device_id,
                        num_devices);
         logger_->trace("Building Cuda Context");
         cuda_contexts_[rank - cpu_workers] = cuda_make_ctx(G, device_id);
         typename gpu_worker_type::config_t gpu_conf(gpu_workers);
-        auto w = new gpu_worker_type(gpu_conf, G_, cuda_contexts_[rank - cpu_workers],
-                                     count_, S_, subset);
+        auto w = new gpu_worker_type(gpu_conf, G_, cuda_contexts_[rank - cpu_workers],  // changed from .back()
+                                     count_, S_);
         workers_[rank] = w;
         gpu_workers_[rank - cpu_workers] = w;
         logger_->trace("Cuda Context Built!");
@@ -695,71 +663,30 @@ class SeedSelectionEngine {
 #endif
   }
 
-  auto get_next_seed(ItrTy B, ItrTy E, std::vector<std::vector<ex_time_ms>> &record) {
-
-    if (G_.num_nodes() == S_.size())
-      return std::pair<vertex_type, size_t> (-1, 0);  //This should terminate Hill-climbing and needs to handled 
-
-    record.resize(workers_.size());
-    #pragma omp parallel for
-      for (size_t j = 0; j < count_.size(); ++j) count_[j] = 0;
-
-      mpmc_head_.store(0);
-#pragma omp parallel num_threads(workers_.size())
-      {
-        assert(workers_.size() == omp_get_num_threads());
-        size_t rank = omp_get_thread_num();
-        auto start = std::chrono::high_resolution_clock::now();
-        workers_[rank]->svc_loop(mpmc_head_, B, E, record[rank]);
-        auto end = std::chrono::high_resolution_clock::now();
-        if (rank < cpu_workers_.size())
-          timePerBatchCPU[rank] = cpu_workers_[rank]->timePerBatch;
-        else {
-#if RIPPLES_ENABLE_CUDA
-          timePerBatchGPU[rank - cpu_workers_.size()] = gpu_workers_[rank - cpu_workers_.size()]->timePerBatch;
-#endif
-        }
-      }
-
-      timePerBatchCPUavg = std::accumulate(timePerBatchCPU.begin(), timePerBatchCPU.end(), 0) / cpu_workers_.size();
-#if RIPPLES_ENABLE_CUDA      
-      timePerBatchGPUavg = std::accumulate(timePerBatchCPU.begin(), timePerBatchCPU.end(), 0) / gpu_workers_.size();
-#endif
-      size_t base_count = 0;
-
-      if(!S_.empty()){
-        
-        for (auto itr = B; itr < E; ++itr) {
-          Bitmask<int> visited(G_.num_nodes());
-          base_count += BFS(G_, *itr, S_.begin(), S_.end(), visited);
-        }
-      }
-      
-      auto itr = std::max_element(count_.begin(), count_.end());
-      vertex_type v = std::distance(count_.begin(), itr);
-      S_.insert(v);
-      
-      
-      return std::pair<vertex_type, size_t> (v, *itr - base_count);
-  }
-
   std::vector<vertex_type> exec(ItrTy B, ItrTy E, size_t k,
                                 std::vector<std::vector<ex_time_ms>> &record) {
     logger_->trace("Start Seed Selection");
 
-    
+    record.resize(workers_.size());
     std::vector<vertex_type> result;
     result.reserve(k);
     for (size_t i = 0; i < k; ++i) {
-      vertex_type v; size_t count;
-      auto start = std::chrono::high_resolution_clock::now(); 
-      std::tie(v,count)  = get_next_seed(B, E, record);
-      auto end = std::chrono::high_resolution_clock::now(); 
-      using ex_time_ms = std::chrono::duration<double, std::milli>;
-      ex_time_ms time = end - start;
+#pragma omp parallel for
+      for (size_t j = 0; j < count_.size(); ++j) count_[j] = 0;
+
+      mpmc_head_.store(0);
+#pragma omp parallel
+      {
+        assert(workers_.size() == omp_get_num_threads());
+        size_t rank = omp_get_thread_num();
+        workers_[rank]->svc_loop(mpmc_head_, B, E, record[rank]);
+      }
+
+      auto itr = std::max_element(count_.begin(), count_.end());
+      vertex_type v = std::distance(count_.begin(), itr);
+      S_.insert(v);
       result.push_back(v);
-      // std::cout << "CPU: " << timePerBatchCPUavg << ", GPU: " << timePerBatchGPUavg << "\n";
-      logger_->trace("Seed {} : {}[{}] = {} in {}", i, v, G_.convertID(v), count, time.count());
+      logger_->trace("Seed {} : {}[{}] = {}", i, v, G_.convertID(v), *itr);
     }
 
     logger_->trace("End Seed Selection");
@@ -770,7 +697,6 @@ class SeedSelectionEngine {
   const GraphTy &G_;
   std::vector<size_t> count_;
   std::set<vertex_type> S_;
-  std::set<vertex_type> subset;
   // size_t gpu_workers_;
   // size_t cpu_workers_;
 

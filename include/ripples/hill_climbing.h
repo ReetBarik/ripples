@@ -65,10 +65,10 @@ namespace ripples {
 
 //! The Hill Climbing Algorithm configuration descriptor.
 struct HillClimbingConfiguration : public AlgorithmConfiguration {
-  size_t samples{1000};
+  size_t samples{10000};
   size_t streaming_workers{0};
   size_t streaming_gpu_workers{0};
-  std::string SubsetFileName{""};
+
   //! \brief Add command line options to configure the Hill Climbing Algorithm.
   //!
   //! \param app The command-line parser object.
@@ -80,10 +80,6 @@ struct HillClimbingConfiguration : public AlgorithmConfiguration {
     app.add_option(
            "--streaming-gpu-workers", streaming_gpu_workers,
            "The number of GPU workers for the CPU+GPU streaming engine.")
-        ->group("Streaming-Engine Options");
-    app.add_option(
-           "--subset", SubsetFileName,
-           "Pruned search space of vertices")
         ->group("Streaming-Engine Options");
   }
 };
@@ -115,9 +111,9 @@ struct HillClimbingExecutionRecord {
 
 template <typename GraphTy, typename GeneratorTy, typename diff_model_tag,
           typename ConfTy>
-std::vector<Bitmask<int>> SampleFrom(GraphTy &G, ConfTy &CFG, GeneratorTy &gen,
+auto SampleFrom(GraphTy &G, ConfTy &CFG, GeneratorTy &gen,
                 HillClimbingExecutionRecord &record,
-                diff_model_tag &&diff_model, int index = -1) {
+                diff_model_tag &&diff_model) {
   using vertex_type = typename GraphTy::vertex_type;
   using edge_mask = Bitmask<int>;
   std::vector<edge_mask> samples(CFG.samples,
@@ -125,28 +121,19 @@ std::vector<Bitmask<int>> SampleFrom(GraphTy &G, ConfTy &CFG, GeneratorTy &gen,
   auto start = std::chrono::high_resolution_clock::now();
 
   using iterator_type = typename std::vector<edge_mask>::iterator;
-  if (index == -1) {
-      SamplingEngine<GraphTy, iterator_type, GeneratorTy, diff_model_tag> SE(
-      G, gen, CFG.streaming_workers, CFG.streaming_gpu_workers);  
-      SE.exec(samples.begin(), samples.end(), record.SamplingTasks);  
-  } else {
-      SamplingEngine<GraphTy, iterator_type, GeneratorTy, diff_model_tag> SE(
-      G, gen, CFG.streaming_workers, CFG.streaming_gpu_workers, "SamplingEngine" + std::to_string(index));  
-      SE.exec(samples.begin(), samples.end(), record.SamplingTasks);  
-  }
-  
-
-  
+  SamplingEngine<GraphTy, iterator_type, GeneratorTy, diff_model_tag> SE(
+      G, gen, CFG.streaming_workers, CFG.streaming_gpu_workers);
+  SE.exec(samples.begin(), samples.end(), record.SamplingTasks);
   auto end = std::chrono::high_resolution_clock::now();
   record.Sampling = end - start;
   return samples;
 }
 
-template <typename GraphTy, typename GraphMaskItrTy, typename ConfigTy, typename VertexTy>
+template <typename GraphTy, typename GraphMaskItrTy, typename ConfigTy>
 auto SeedSelection(GraphTy &G, GraphMaskItrTy B, GraphMaskItrTy E,
-                   ConfigTy &CFG, HillClimbingExecutionRecord &record, std::set<VertexTy> s) {
+                   ConfigTy &CFG, HillClimbingExecutionRecord &record) {
   SeedSelectionEngine<GraphTy, GraphMaskItrTy> countingEngine(
-      G, CFG.streaming_workers, CFG.streaming_gpu_workers, s);
+      G, CFG.streaming_workers, CFG.streaming_gpu_workers);
   auto start = std::chrono::high_resolution_clock::now();
   auto S = countingEngine.exec(B, E, CFG.k, record.SeedSelectionTasks);
   auto end = std::chrono::high_resolution_clock::now();
@@ -156,15 +143,15 @@ auto SeedSelection(GraphTy &G, GraphMaskItrTy B, GraphMaskItrTy E,
 }
 
 template <typename GraphTy, typename GeneratorTy, typename diff_model_tag,
-          typename ConfTy, typename VertexTy>
+          typename ConfTy>
 auto HillClimbing(GraphTy &G, ConfTy &CFG, GeneratorTy &gen,
                   HillClimbingExecutionRecord &record,
-                  diff_model_tag &&model_tag, std::set<VertexTy> s) {
+                  diff_model_tag &&model_tag) {
   auto sampled_graphs =
       SampleFrom(G, CFG, gen, record, std::forward<diff_model_tag>(model_tag));
 
   auto S = SeedSelection(G, sampled_graphs.begin(), sampled_graphs.end(), CFG,
-                         record, s);
+                         record);
 
   return S;
 }

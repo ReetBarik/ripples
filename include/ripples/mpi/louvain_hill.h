@@ -166,7 +166,7 @@ struct Compare {
 
 
 template <typename GraphTy, typename RecordTy, typename ConfTy, typename execution_tag>
-std::vector<typename GraphTy::vertex_type> FindMostInfluentialSeedSet(std::vector<GraphTy> & communities, std::vector<std::vector<Bitmask<int>>> &sampled_graphs,
+std::vector<typename GraphTy::vertex_type> FindMostInfluentialSeedSetOneReduce(std::vector<GraphTy> & communities, std::vector<std::vector<Bitmask<int>>> &sampled_graphs,
                             std::vector<RecordTy> &R, ConfTy &CFG,
                             execution_tag &&ex_tag) {
   spdlog::get("console")->info("SeedSelect start");
@@ -175,7 +175,7 @@ std::vector<typename GraphTy::vertex_type> FindMostInfluentialSeedSet(std::vecto
   MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
   int world_size;
   MPI_Comm_size(MPI_COMM_WORLD, &world_size);
-
+  int start = world_rank * communities.size();
   using vertex_type = typename GraphTy::vertex_type;
 
 
@@ -196,7 +196,8 @@ std::vector<typename GraphTy::vertex_type> FindMostInfluentialSeedSet(std::vecto
 
   CFG.streaming_workers = num_threads_d2;
   CFG.streaming_workers -= CFG.streaming_gpu_workers;
-
+  // console->info("Rank : {}, d1 : {}, d2 : {}, CPU : {}, GPU : {}", world_rank, num_threads_d1, num_threads_d2, CFG.streaming_workers, CFG.streaming_gpu_workers);
+  // spdlog::get("console")->flush();
   // Init on heap per community
   using vertex_contribution_pair = std::pair<vertex_type, size_t>;
   std::pair<vertex_type, size_t>* global_heap = (std::pair<vertex_type, size_t>*)malloc(sizeof(std::pair<vertex_type, size_t>) * (CFG.k + 1));
@@ -219,48 +220,203 @@ std::vector<typename GraphTy::vertex_type> FindMostInfluentialSeedSet(std::vecto
   std::vector<SeedSelectionEngine<GraphFwd, std::vector<Bitmask<int>>::iterator>*> SEV;
   SEV.reserve(communities.size());
   for (size_t i = 0; i < communities.size(); ++i) {
-    auto S = new SeedSelectionEngine<GraphFwd, std::vector<Bitmask<int>>::iterator>(communities[i], CFG.streaming_workers, CFG.streaming_gpu_workers, "SeedSelectionEngine" + std::to_string(i), CFG.streaming_gpu_workers, (i % num_threads_d1) * CFG.streaming_gpu_workers);
+    auto S = new SeedSelectionEngine<GraphFwd, std::vector<Bitmask<int>>::iterator>(communities[i], CFG.streaming_workers, CFG.streaming_gpu_workers, "SeedSelectionEngine" + std::to_string(i + start), CFG.streaming_gpu_workers, (i % num_threads_d1) * CFG.streaming_gpu_workers);
+    SEV[i] = S;
+  }
+
+
+  std::vector<double> active_times(communities.size(), 0.0);
+  std::vector<double> active_rounds(communities.size(), 0.0);
+  
+  while (!std::all_of(active_communities.begin(), active_communities.end(), [](const uint64_t &v) -> bool { return v == 0; })) {
+  
+  
+#pragma omp parallel for schedule(static) num_threads(num_threads_d1) 
+    for (size_t i = 0; i < communities.size(); ++i) {
+      auto beg = std::chrono::high_resolution_clock::now();
+      if (active_communities[i] == 0) continue;
+
+      vertex_contribution_pair vcp = SEV[i]->get_next_seed(sampled_graphs[i].begin(), sampled_graphs[i].end(), R[i].SeedSelectionTasks);
+      if (vcp.first == -1) {
+        active_communities[i] = 0;
+        auto end = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> diff = end - beg;
+        active_times[i] += diff.count();
+        continue;
+      }
+      vcp.first = communities[i].convertID(vcp.first);
+
+
+      // Handle the global index insertion
+      std::lock_guard<std::mutex> _(local_heap_mutex);
+      std::pop_heap(local_heap.begin(), local_heap.end(), heap_cmp);
+
+      local_heap.back() = vcp;
+      std::push_heap(local_heap.begin(), local_heap.end(), heap_cmp);
+
+      if (local_heap.front() == vcp) {
+      	active_communities[i] = 0;
+      	auto end = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> diff = end - beg;
+        active_times[i] += diff.count();
+        continue;
+      }
+        auto end = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> diff = end - beg;
+        active_times[i] += diff.count();
+        active_rounds[i] += 1;
+    }
+	//}
+
+  }
+
+  std::sort_heap(local_heap.begin(), local_heap.end(), heap_cmp);
+  // ALL REDUCE 
+  vertex_contribution_pair* h = &local_heap[0];
+  global_heap = MyAllReduce(world_rank, CFG.k + 1, h, world_size);
+
+  for (size_t j = 0; j < CFG.k + 1; j++) {
+    	local_heap[j].first = global_heap[j].first;
+    	local_heap[j].second = global_heap[j].second;
+  }
+  std::make_heap(local_heap.begin(), local_heap.end(), heap_cmp);
+  std::pop_heap(local_heap.begin(), local_heap.end(), heap_cmp);
+
+  local_heap.pop_back();
+
+  double coverage = 0;
+  std::vector<typename GraphTy::vertex_type> seeds;
+  seeds.reserve(CFG.k);
+  std::sort_heap(local_heap.begin(), local_heap.end(), heap_cmp);
+  for (auto e : local_heap) {  
+    seeds.push_back(e.first);
+    coverage += e.second;
+  }
+  for (size_t t = 0; t < communities.size(); ++t) {  
+	spdlog::get("console")->info("Rank: {} Community: {} Active Time: {} Active Rounds: {}", world_rank, t, active_times[t], active_rounds[t]);
+  }
+  spdlog::get("console")->flush();
+
+  return seeds;
+}
+
+template <typename GraphTy, typename RecordTy, typename ConfTy, typename execution_tag>
+std::vector<typename GraphTy::vertex_type> FindMostInfluentialSeedSetMultipleReduce(std::vector<GraphTy> & communities, std::vector<std::vector<Bitmask<int>>> &sampled_graphs,
+                            std::vector<RecordTy> &R, ConfTy &CFG,
+                            execution_tag &&ex_tag) {
+  spdlog::get("console")->info("SeedSelect start");
+
+  int world_rank;
+  MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
+  int world_size;
+  MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+  int start = world_rank * communities.size();
+  using vertex_type = typename GraphTy::vertex_type;
+
+
+  Compare<vertex_type> cmp;
+  
+  omp_set_nested(1);
+  int num_threads_d1 = CFG.num_threads_d1, num_threads_d2;
+  
+  num_threads_d2 = std::floor(omp_get_max_threads() / num_threads_d1);
+
+  
+  size_t total_gpu = 0; 
+  #if RIPPLES_ENABLE_CUDA
+  total_gpu = int(cuda_num_devices() / num_threads_d1) * num_threads_d1;
+  CFG.streaming_gpu_workers = total_gpu / num_threads_d1;
+  #endif
+  spdlog::get("console")->flush();
+
+  CFG.streaming_workers = num_threads_d2;
+  CFG.streaming_workers -= CFG.streaming_gpu_workers;
+  // console->info("Rank : {}, d1 : {}, d2 : {}, CPU : {}, GPU : {}", world_rank, num_threads_d1, num_threads_d2, CFG.streaming_workers, CFG.streaming_gpu_workers);
+  // spdlog::get("console")->flush();
+  // Init on heap per community
+  using vertex_contribution_pair = std::pair<vertex_type, size_t>;
+  std::pair<vertex_type, size_t>* global_heap = (std::pair<vertex_type, size_t>*)malloc(sizeof(std::pair<vertex_type, size_t>) * (CFG.k + 1));
+      
+  std::vector<vertex_contribution_pair> local_heap(
+      CFG.k + 1, vertex_contribution_pair{-1, 0});
+  std::vector<uint64_t> active_communities(communities.size(), 1);
+  bool local_termination = false;
+  bool global_termination = false; 
+  auto heap_cmp = [](const vertex_contribution_pair &a,
+                     const vertex_contribution_pair &b) -> bool {
+    return a.second > b.second;
+  };
+
+  std::make_heap(local_heap.begin(), local_heap.end(), heap_cmp);
+  std::mutex local_heap_mutex;
+  
+  using GraphFwd =
+      ripples::Graph<uint32_t, ripples::WeightedDestination<uint32_t, float>, ripples::ForwardDirection<uint32_t>>;
+
+  std::vector<SeedSelectionEngine<GraphFwd, std::vector<Bitmask<int>>::iterator>*> SEV;
+  SEV.reserve(communities.size());
+  for (size_t i = 0; i < communities.size(); ++i) {
+    auto S = new SeedSelectionEngine<GraphFwd, std::vector<Bitmask<int>>::iterator>(communities[i], CFG.streaming_workers, CFG.streaming_gpu_workers, "SeedSelectionEngine" + std::to_string(i + start), CFG.streaming_gpu_workers, (i % num_threads_d1) * CFG.streaming_gpu_workers);
     SEV[i] = S;
   }
 
   bool firstIter = false;
+  std::vector<double> active_times(communities.size(), 0.0);
+  std::vector<double> active_rounds(communities.size(), 0.0);
 
-  if (communities.size() < CFG.k + 1) firstIter = true;
-
-  while (!std::all_of(active_communities.begin(), active_communities.end(), [](const uint64_t &v) -> bool { return v == 0; })) {
+  // if (communities.size() < CFG.k + 1) firstIter = true;
+  
+  while ((!std::all_of(active_communities.begin(), active_communities.end(), [](const uint64_t &v) -> bool { return v == 0; })) || !global_termination) {
 
   
 
-  	for (size_t j = 0; j < (firstIter ? std::ceil((CFG.k + 1) / communities.size()) : 1) ; j++) {
+  	//for (size_t j = 0; j < (firstIter ? std::ceil((CFG.k + 1) / communities.size()) : 1) ; j++) {
 
 #pragma omp parallel for schedule(static) num_threads(num_threads_d1) 
-	    for (size_t i = 0; i < communities.size(); ++i) {
-	      if (active_communities[i] == 0) continue;
+    for (size_t i = 0; i < communities.size(); ++i) {
+      auto beg = std::chrono::high_resolution_clock::now();
+      if (active_communities[i] == 0) continue;
 
-	      vertex_contribution_pair vcp = SEV[i]->get_next_seed(sampled_graphs[i].begin(), sampled_graphs[i].end(), R[i].SeedSelectionTasks);
-	      if (vcp.first == -1) {
-	        active_communities[i] = 0;
-	        continue;
-	      }
-	      vcp.first = communities[i].convertID(vcp.first);
+      vertex_contribution_pair vcp = SEV[i]->get_next_seed(sampled_graphs[i].begin(), sampled_graphs[i].end(), R[i].SeedSelectionTasks);
+      if (vcp.first == -1) {
+        active_communities[i] = 0;
+        auto end = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> diff = end - beg;
+        active_times[i] += diff.count();
+        continue;
+      }
+      vcp.first = communities[i].convertID(vcp.first);
 
 
-	      // Handle the global index insertion
-	      std::lock_guard<std::mutex> _(local_heap_mutex);
-	      std::pop_heap(local_heap.begin(), local_heap.end(), heap_cmp);
+      // Handle the global index insertion
+      std::lock_guard<std::mutex> _(local_heap_mutex);
+      std::pop_heap(local_heap.begin(), local_heap.end(), heap_cmp);
 
-	      local_heap.back() = vcp;
-	      std::push_heap(local_heap.begin(), local_heap.end(), heap_cmp);
+      local_heap.back() = vcp;
+      std::push_heap(local_heap.begin(), local_heap.end(), heap_cmp);
 
-	      if (local_heap.front() == vcp) active_communities[i] = 0;
-	    }
-	}
+      if (local_heap.front() == vcp) {
+      	active_communities[i] = 0;
+      	auto end = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> diff = end - beg;
+        active_times[i] += diff.count();
+        continue;
+      }
+        auto end = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> diff = end - beg;
+        active_times[i] += diff.count();
+        active_rounds[i] += 1;
+    }
+	//}
+	local_termination = std::all_of(active_communities.begin(), active_communities.end(), [](const uint64_t &v) -> bool { return v == 0; });
 
     std::sort_heap(local_heap.begin(), local_heap.end(), heap_cmp);
     // ALL REDUCE 
     vertex_contribution_pair* h = &local_heap[0];
     global_heap = MyAllReduce(world_rank, CFG.k + 1, h, world_size);
     
+    MPI_Allreduce(&local_termination, &global_termination, 1, MPI_C_BOOL, MPI_LAND, MPI_COMM_WORLD);
+
     for (size_t j = 0; j < CFG.k + 1; j++) {
     	local_heap[j].first = global_heap[j].first;
     	local_heap[j].second = global_heap[j].second;
@@ -281,7 +437,10 @@ std::vector<typename GraphTy::vertex_type> FindMostInfluentialSeedSet(std::vecto
     seeds.push_back(e.first);
     coverage += e.second;
   }
-
+  for (size_t t = 0; t < communities.size(); ++t) {  
+	spdlog::get("console")->info("Rank: {} Community: {} Active Time: {} Active Rounds: {}", world_rank, t, active_times[t], active_rounds[t]);
+  }
+  spdlog::get("console")->flush();
 
   return seeds;
 }
@@ -318,7 +477,14 @@ auto LouvainHill(std::vector<GraphTy> &communities, ConfTy &CFG, std::vector<Rec
   using vertex_type = typename GraphTy::vertex_type;
   size_t k = CFG.k;
 
+  int world_rank;
+  MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
+  int world_size;
+  MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+
   std::vector<decltype(gen)> comm_gen(communities.size());
+
+  int start = world_rank * communities.size();
 
   for (size_t i = 0; i < communities.size(); ++i) {
     auto local_gen = gen;
@@ -331,11 +497,11 @@ auto LouvainHill(std::vector<GraphTy> &communities, ConfTy &CFG, std::vector<Rec
   // For each community do Sampling
 // #pragma omp parallel for schedule(dynamic)
   for (size_t i = 0; i < communities.size(); ++i) {
-    sampled_graphs[i] = SampleFrom(communities[i], CFG, comm_gen[i], R[i], std::forward<diff_model_tag>(model_tag), i);
+    sampled_graphs[i] = SampleFrom(communities[i], CFG, comm_gen[i], R[i], std::forward<diff_model_tag>(model_tag), i + start);
   }
 
   // Global seed selection using the heap
-  auto S = FindMostInfluentialSeedSet(communities, sampled_graphs, R, CFG,
+  auto S = FindMostInfluentialSeedSetMultipleReduce(communities, sampled_graphs, R, CFG,
                                   std::forward<omp_parallel_tag>(ex_tag));
 
   return std::make_pair(S, R);
